@@ -98,12 +98,33 @@ DATABASES = {
 
 # --- Auth ---------------------------------------------------------------------
 
+AUTH_USER_MODEL = "accounts.User"
+
+# Argon2 first: strongest available hasher becomes the default for new
+# password hashes. Django still recognizes/upgrades legacy hashes with the
+# others listed here.
+PASSWORD_HASHERS = [
+    "django.contrib.auth.hashers.Argon2PasswordHasher",
+    "django.contrib.auth.hashers.PBKDF2PasswordHasher",
+    "django.contrib.auth.hashers.PBKDF2SHA1PasswordHasher",
+    "django.contrib.auth.hashers.BCryptSHA256PasswordHasher",
+]
+
 AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
     {"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator"},
     {"NAME": "django.contrib.auth.password_validation.CommonPasswordValidator"},
     {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
 ]
+
+# accounts.User.email (USERNAME_FIELD) is deliberately unique per-tenant
+# (tenant, email) rather than globally unique — the same email can belong to
+# a different person at a different institution. Django's auth.E003 check
+# assumes stock ModelBackend does a global `.get(email=...)` lookup, which is
+# true today but will be replaced by a tenant-aware authentication backend
+# when the login view lands (a later task). Silenced deliberately, not
+# accidentally: do not remove this without shipping that backend first.
+SILENCED_SYSTEM_CHECKS = ["auth.E003"]
 
 # --- I18n -----------------------------------------------------------------------
 

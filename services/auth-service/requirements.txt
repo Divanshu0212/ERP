@@ -9,6 +9,7 @@ redis
 psycopg[binary]
 django-prometheus
 gunicorn
+argon2-cffi
 -e ../../shared/libs/suerp_common
 
 # Test tooling
