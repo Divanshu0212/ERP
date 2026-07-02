@@ -3,13 +3,18 @@
 Multi-tenancy model: shared database, shared schema, row-level ``tenant_id``.
 The active tenant is stored in a context variable (async/thread safe) and every
 tenant-owned queryset is auto-filtered by ``TenantManager``. ``TenantMiddleware``
-sets the context from the authenticated JWT claim (or subdomain fallback) and
-always clears it after the response.
+resolves the tenant itself in its pre-phase — best-effort decoding the request's
+bearer token (falling back to the subdomain when there is none) — since it runs
+before DRF's ``JWTAuthentication`` does. It always clears the context after the
+response.
 """
 
 import contextvars
 
 from django.db import models
+from rest_framework.exceptions import AuthenticationFailed
+
+from .auth import decode_bearer_token
 
 _current_tenant: contextvars.ContextVar[str | None] = contextvars.ContextVar(
     "current_tenant", default=None
@@ -59,9 +64,14 @@ class TenantModel(models.Model):
 class TenantMiddleware:
     """Resolve the active tenant for the duration of a request.
 
-    Primary source is ``request.tenant_id`` populated by ``JWTAuthentication``
-    during DRF auth. As a fallback (e.g. unauthenticated tenant-scoped landing
-    pages) the leftmost subdomain label is used. The tenant is always cleared in
+    Middleware pre-phase runs *before* DRF view dispatch, i.e. before
+    ``JWTAuthentication.authenticate()`` ever runs — so ``request.tenant_id``
+    cannot be relied on as already-populated at this point. Instead this
+    middleware decodes the bearer token itself (best-effort) to resolve the
+    tenant early, and also stashes the result on ``request.tenant_id`` so
+    downstream code (and ``JWTAuthentication``, tests, etc.) can read it. As a
+    fallback (e.g. unauthenticated tenant-scoped landing pages, or no token at
+    all) the leftmost subdomain label is used. The tenant is always cleared in
     a ``finally`` so context never leaks across requests on a reused worker.
     """
 
@@ -70,8 +80,37 @@ class TenantMiddleware:
 
     def __call__(self, request):
         try:
-            tenant = getattr(request, "tenant_id", None)
-            if tenant is None:
+            tenant = None
+            token_present_but_invalid = False
+            try:
+                # Note: this verifies the JWT signature here (best-effort, for
+                # tenant context), and JWTAuthentication verifies it again
+                # later (authoritatively, for identity/authorization). That's
+                # up to two HS256 verifications per request — cheap, and
+                # simpler than trying to cache/share the decoded claims across
+                # the middleware/DRF boundary, which would couple them tightly
+                # for little benefit.
+                claims = decode_bearer_token(request)
+            except AuthenticationFailed:
+                # An invalid/expired/tampered token must not crash the
+                # middleware — this is not a second auth gate, just a
+                # best-effort tenant resolution for context. DRF's
+                # JWTAuthentication will still run in the view and return the
+                # proper 401 envelope for protected endpoints. Treat as
+                # anonymous here (tenant=None) and let request handling
+                # continue; the view is responsible for rejecting the request.
+                claims = None
+                token_present_but_invalid = True
+
+            if claims is not None:
+                tenant = claims["tenant"]
+                # Stash so downstream code/tests can read request.tenant_id
+                # without needing to re-decode the token.
+                request.tenant_id = tenant
+            elif not token_present_but_invalid:
+                # No bearer token at all -> fall back to subdomain. (A present
+                # but invalid token stays anonymous; we don't guess a tenant
+                # from the host in that case.)
                 host = request.get_host().split(":")[0]
                 labels = host.split(".")
                 if len(labels) > 2:  # <slug>.suerp.app

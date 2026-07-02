@@ -54,9 +54,10 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
-    # Must come after DRF authentication has run (it reads request.tenant_id
-    # set by suerp_common.auth.JWTAuthentication), so it sits last among the
-    # request-scoped middleware, right before the Prometheus "after" wrapper.
+    # Resolves tenant itself (best-effort JWT decode, falling back to
+    # subdomain) in its pre-phase, since middleware pre-phases always run
+    # before DRF view dispatch/authentication regardless of position in this
+    # list — see suerp_common.tenancy.TenantMiddleware docstring.
     "suerp_common.tenancy.TenantMiddleware",
     "django_prometheus.middleware.PrometheusAfterMiddleware",
 ]

@@ -12,6 +12,32 @@ from rest_framework.authentication import BaseAuthentication, get_authorization_
 from rest_framework.exceptions import AuthenticationFailed
 
 
+def decode_bearer_token(request) -> dict | None:
+    """Decode and verify the request's ``Authorization: Bearer <token>`` header.
+
+    Returns ``None`` when there is no bearer token (anonymous — headers carry
+    no authority on their own). Raises ``AuthenticationFailed`` when a bearer
+    token is present but invalid, expired, or tampered with. Callers that only
+    want a best-effort tenant hint (e.g. ``TenantMiddleware``) should catch
+    ``AuthenticationFailed`` themselves rather than let it propagate.
+    """
+    auth = get_authorization_header(request).split()
+    if not auth or auth[0].lower() != b"bearer":
+        return None  # no bearer token -> anonymous (headers carry no authority)
+    if len(auth) != 2:
+        raise AuthenticationFailed("Invalid Authorization header.")
+
+    token = auth[1].decode()
+    try:
+        return jwt.decode(
+            token,
+            settings.JWT_SIGNING_KEY,
+            algorithms=["HS256"],
+        )
+    except jwt.PyJWTError as exc:
+        raise AuthenticationFailed("Invalid or expired token.") from exc
+
+
 class SimpleUser:
     """Lightweight principal built from JWT claims — no DB lookup.
 
@@ -37,21 +63,9 @@ class JWTAuthentication(BaseAuthentication):
     keyword = "Bearer"
 
     def authenticate(self, request):
-        auth = get_authorization_header(request).split()
-        if not auth or auth[0].lower() != self.keyword.lower().encode():
+        claims = decode_bearer_token(request)
+        if claims is None:
             return None  # no bearer token -> anonymous (headers carry no authority)
-        if len(auth) != 2:
-            raise AuthenticationFailed("Invalid Authorization header.")
-
-        token = auth[1].decode()
-        try:
-            claims = jwt.decode(
-                token,
-                settings.JWT_SIGNING_KEY,
-                algorithms=["HS256"],
-            )
-        except jwt.PyJWTError as exc:
-            raise AuthenticationFailed("Invalid or expired token.") from exc
 
         try:
             user = SimpleUser(
