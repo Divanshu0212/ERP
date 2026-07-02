@@ -1,7 +1,6 @@
 import uuid
 
 import pytest
-
 from suerp_common.tenancy import get_current_tenant, set_current_tenant
 
 

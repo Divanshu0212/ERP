@@ -1,5 +1,4 @@
 from django.db import models
-
 from suerp_common.tenancy import TenantModel
 
 

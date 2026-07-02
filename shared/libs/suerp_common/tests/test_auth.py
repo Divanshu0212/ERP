@@ -3,7 +3,6 @@ import uuid
 import jwt
 import pytest
 from rest_framework.exceptions import AuthenticationFailed
-
 from suerp_common.auth import JWTAuthentication
 
 SIGNING_KEY = "test-jwt-key-at-least-32-bytes-long-000"  # matches tests/settings.JWT_SIGNING_KEY

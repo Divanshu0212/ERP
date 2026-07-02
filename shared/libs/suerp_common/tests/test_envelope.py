@@ -1,5 +1,4 @@
 from rest_framework import serializers
-
 from suerp_common.envelope import exception_handler, fail, ok
 
 

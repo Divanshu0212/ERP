@@ -8,7 +8,7 @@ the routing keys they care about. Poison messages are dead-lettered.
 import json
 import uuid
 from collections.abc import Callable
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pika
 from django.conf import settings
@@ -22,7 +22,7 @@ def build_event(type: str, tenant_id: str, payload: dict) -> dict:
         "event_id": str(uuid.uuid4()),
         "type": type,
         "tenant_id": str(tenant_id),
-        "occurred_at": datetime.now(timezone.utc).isoformat(),
+        "occurred_at": datetime.now(UTC).isoformat(),
         "payload": payload,
     }
 
