@@ -64,7 +64,16 @@ class Payment(TenantModel):
     amount = models.DecimalField(max_digits=10, decimal_places=2)
     status = models.CharField(max_length=20, choices=Status.choices)
     gateway_ref = models.CharField(max_length=255)
+    # Dedup key for the /pay endpoint: replaying the same idempotency_key for
+    # the same invoice must return the prior outcome instead of re-charging
+    # or re-emitting an event (see billing/views.py PayView).
+    idempotency_key = models.CharField(max_length=255, null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["invoice", "idempotency_key"], name="payment_invoice_idem"),
+        ]
 
     def __str__(self):
         return f"Payment {self.id} ({self.status})"
