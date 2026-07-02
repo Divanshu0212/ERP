@@ -11,7 +11,12 @@ monorepo copies:
    consume_events``), never inside a Django request, so there is no
    ``TenantMiddleware`` to populate ``suerp_common.tenancy``'s contextvar and
    no ambient tenant for the auto-scoping ``TenantManager`` (``Invoice.
-   objects``) to filter by. The chosen — and recommended — approach is to
+   objects``) to filter by. NOTE: with no contextvar set, ``TenantManager``
+   does NOT fail safe — it returns an *unfiltered, cross-tenant* queryset
+   (this is deliberate, for migrations/system tasks). So using ``objects`` in
+   a consumer would silently read/write across every tenant. That makes the
+   explicit approach below not just tidier but mandatory. The chosen —
+   and required — approach is to
    resolve ``tenant_id`` explicitly from the event envelope and write through
    ``Invoice.all_objects`` (which bypasses tenant scoping) with that
    ``tenant_id`` set explicitly on every created row. This is more robust
