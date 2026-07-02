@@ -1,7 +1,12 @@
-"""Billing endpoints.
+"""Billing endpoints (Task 4.4): invoices and pay.
 
-Empty for now — views land in Task 4.4 (invoice/payment/receipt API). Included
-under /api/v1/finance/ from config.urls so the route prefix already exists.
+Included under /api/v1/finance/ from config.urls.
 """
 
-urlpatterns = []
+from billing.views import InvoiceListCreateView, PayView
+from django.urls import path
+
+urlpatterns = [
+    path("invoices", InvoiceListCreateView.as_view(), name="invoice-list-create"),
+    path("pay", PayView.as_view(), name="pay"),
+]
