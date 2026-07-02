@@ -1,0 +1,15 @@
+django>=5,<6
+djangorestframework
+drf-spectacular
+django-environ
+dj-database-url
+celery
+redis
+psycopg[binary]
+django-prometheus
+gunicorn
+-e ../../shared/libs/suerp_common
+
+# Test tooling
+pytest
+pytest-django
