@@ -7,6 +7,7 @@ Prometheus, drf-spectacular) should be reproduced identically in the next
 service's bootstrap unless that service has a documented reason to diverge.
 """
 
+from datetime import timedelta
 from pathlib import Path
 
 import dj_database_url
@@ -119,12 +120,22 @@ AUTH_PASSWORD_VALIDATORS = [
 
 # accounts.User.email (USERNAME_FIELD) is deliberately unique per-tenant
 # (tenant, email) rather than globally unique — the same email can belong to
-# a different person at a different institution. Django's auth.E003 check
-# assumes stock ModelBackend does a global `.get(email=...)` lookup, which is
-# true today but will be replaced by a tenant-aware authentication backend
-# when the login view lands (a later task). Silenced deliberately, not
-# accidentally: do not remove this without shipping that backend first.
-SILENCED_SYSTEM_CHECKS = ["auth.E003"]
+# a different person at a different institution. Stock ModelBackend does a
+# global `.get(email=...)` lookup, which would authenticate against the wrong
+# tenant's user, so TenantAuthBackend (accounts/backends.py) scopes the
+# lookup to (tenant, email) instead. Declaring a non-default backend here
+# downgrades Django's auth.E003 check to a harmless warning (it no longer
+# assumes stock ModelBackend semantics apply), so the check no longer needs
+# silencing.
+#
+# Deliberately NOT also listing ModelBackend here: it would run as a fallback
+# whenever TenantAuthBackend returns None, doing a *global* `.get(email=...)`
+# lookup keyed only on USERNAME_FIELD — exactly the cross-tenant leak this
+# backend exists to prevent (and it raises MultipleObjectsReturned outright
+# once the same email exists at two institutions).
+AUTHENTICATION_BACKENDS = [
+    "accounts.backends.TenantAuthBackend",
+]
 
 # --- I18n -----------------------------------------------------------------------
 
@@ -161,6 +172,23 @@ SPECTACULAR_SETTINGS = {
     "DESCRIPTION": "Authentication, users, roles, and tenant provisioning for SU-ERP.",
     "VERSION": "1.0.0",
     "SERVE_INCLUDE_SCHEMA": False,
+}
+
+# --- SimpleJWT ------------------------------------------------------------------
+# accounts.views issues tokens manually (RefreshToken.for_user + explicit
+# claim assignment) rather than via SimpleJWT's default TokenObtainPairView,
+# so most of these only govern signing/lifetime and the /refresh endpoint.
+# USER_ID_CLAIM/USER_ID_FIELD make the "sub" claim carry the user's UUID PK —
+# the exact claim key suerp_common.auth.JWTAuthentication reads on every
+# other service.
+SIMPLE_JWT = {
+    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=15),
+    "REFRESH_TOKEN_LIFETIME": timedelta(days=7),
+    "ROTATE_REFRESH_TOKENS": True,
+    "ALGORITHM": "HS256",
+    "SIGNING_KEY": JWT_SIGNING_KEY,
+    "USER_ID_FIELD": "id",
+    "USER_ID_CLAIM": "sub",
 }
 
 # --- Redis / Celery --------------------------------------------------------------

@@ -1,0 +1,178 @@
+"""Register / login / refresh / me endpoints.
+
+Access tokens are built manually (``RefreshToken.for_user`` + explicit claim
+assignment) rather than via ``TokenObtainPairSerializer.get_token`` so that
+authentication can go through the tenant-scoped ``TenantAuthBackend`` (email
+alone is not enough to identify a user — see ``accounts/backends.py``) before
+any token is minted. The claim keys (``sub``, ``role``, ``tenant``) are
+exactly what ``suerp_common.auth.JWTAuthentication`` reads; every other
+service treats this shape as its contract with auth-service.
+"""
+
+from accounts.models import Institution, LoginAudit, User
+from accounts.serializers import (
+    LoginSerializer,
+    MeSerializer,
+    RefreshSerializer,
+    RegisterSerializer,
+)
+from django.conf import settings
+from django.contrib.auth import authenticate
+from django.utils import timezone
+from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.views import APIView
+from rest_framework_simplejwt.exceptions import TokenError
+from rest_framework_simplejwt.tokens import RefreshToken
+from suerp_common.envelope import fail, ok
+
+LOCKOUT_THRESHOLD = 5
+LOCKOUT_WINDOW_MINUTES = 15
+
+
+def _issue_tokens(user: User) -> dict:
+    """Mint a refresh+access token pair carrying sub/role/tenant claims."""
+    refresh = RefreshToken.for_user(user)
+    refresh["sub"] = str(user.id)
+    refresh["role"] = user.role
+    refresh["tenant"] = str(user.tenant_id)
+
+    access = refresh.access_token
+    access["sub"] = str(user.id)
+    access["role"] = user.role
+    access["tenant"] = str(user.tenant_id)
+
+    return {"access": str(access), "refresh": str(refresh)}
+
+
+def _resolve_active_institution(slug: str) -> Institution | None:
+    try:
+        institution = Institution.objects.get(slug=slug)
+    except Institution.DoesNotExist:
+        return None
+    if not institution.is_active:
+        return None
+    return institution
+
+
+class RegisterView(APIView):
+    permission_classes = [AllowAny]
+    authentication_classes = []
+
+    def post(self, request):
+        serializer = RegisterSerializer(data=request.data)
+        if not serializer.is_valid():
+            return fail("Registration failed.", errors=serializer.errors, status=400)
+
+        user = serializer.save()
+        return ok(
+            {"id": str(user.id), "email": user.email, "role": user.role},
+            message="Registered.",
+            status=201,
+        )
+
+
+class LoginView(APIView):
+    permission_classes = [AllowAny]
+    authentication_classes = []
+
+    def post(self, request):
+        serializer = LoginSerializer(data=request.data)
+        if not serializer.is_valid():
+            return fail("Invalid login request.", errors=serializer.errors, status=400)
+
+        slug = serializer.validated_data["institution_slug"]
+        email = User.objects.normalize_email(serializer.validated_data["email"])
+        password = serializer.validated_data["password"]
+
+        institution = _resolve_active_institution(slug)
+        if institution is None:
+            return fail("Unknown or inactive institution.", status=400)
+
+        ip = request.META.get("REMOTE_ADDR")
+
+        if self._is_locked_out(institution, email):
+            return fail(
+                "Too many failed login attempts. Try again later.",
+                status=429,
+            )
+
+        user = authenticate(request, email=email, password=password, tenant=institution)
+
+        if user is None:
+            LoginAudit.objects.create(
+                tenant=institution, user=None, email=email, ip=ip, success=False
+            )
+            return fail("Invalid credentials.", status=401)
+
+        LoginAudit.objects.create(tenant=institution, user=user, email=email, ip=ip, success=True)
+
+        tokens = _issue_tokens(user)
+        return ok(tokens, message="Login successful.")
+
+    @staticmethod
+    def _is_locked_out(institution: Institution, email: str) -> bool:
+        window_start = timezone.now() - timezone.timedelta(minutes=LOCKOUT_WINDOW_MINUTES)
+        failure_count = LoginAudit.objects.filter(
+            tenant=institution,
+            email=email,
+            success=False,
+            timestamp__gte=window_start,
+        ).count()
+        return failure_count >= LOCKOUT_THRESHOLD
+
+
+class RefreshView(APIView):
+    permission_classes = [AllowAny]
+    authentication_classes = []
+
+    def post(self, request):
+        serializer = RefreshSerializer(data=request.data)
+        if not serializer.is_valid():
+            return fail("Invalid refresh request.", errors=serializer.errors, status=400)
+
+        try:
+            refresh = RefreshToken(serializer.validated_data["refresh"])
+        except TokenError as exc:
+            return fail(f"Invalid or expired refresh token: {exc}", status=401)
+
+        access = refresh.access_token
+        # RefreshToken.access_token copies claims automatically except those
+        # listed in no_copy_claims (token_type/exp/iat/jti) — sub/role/tenant
+        # ride along already, but set explicitly to guarantee the contract
+        # even if SimpleJWT's copy behavior changes upstream.
+        access["sub"] = refresh.get("sub")
+        access["role"] = refresh.get("role")
+        access["tenant"] = refresh.get("tenant")
+
+        data = {"access": str(access)}
+
+        if settings.SIMPLE_JWT.get("ROTATE_REFRESH_TOKENS"):
+            refresh.set_jti()
+            refresh.set_exp()
+            refresh.set_iat()
+            data["refresh"] = str(refresh)
+
+        return ok(data, message="Token refreshed.")
+
+
+class MeView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        # request.user is suerp_common.auth.SimpleUser, built from verified
+        # JWT claims only (zero-trust: no DB lookup needed for identity), but
+        # /me additionally confirms the user still exists and is active.
+        try:
+            user = User.objects.get(pk=request.user.id)
+        except User.DoesNotExist:
+            return fail("User no longer exists.", status=401)
+
+        serializer = MeSerializer(
+            {
+                "id": user.id,
+                "email": user.email,
+                "role": user.role,
+                "tenant": str(user.tenant_id),
+            }
+        )
+        return ok(serializer.data)
