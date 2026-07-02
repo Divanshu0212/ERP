@@ -202,6 +202,17 @@ CELERY_TASK_SERIALIZER = "json"
 CELERY_RESULT_SERIALIZER = "json"
 CELERY_TIMEZONE = TIME_ZONE
 
+# Drains the transactional outbox (suerp_common.outbox.drain_outbox) every ~5
+# seconds so events committed by any view/task get relayed to RabbitMQ with
+# low latency. Every later service wires its own accounts/domain app's
+# drain_outbox_task the same way under its own beat schedule name.
+CELERY_BEAT_SCHEDULE = {
+    "drain-outbox": {
+        "task": "accounts.drain_outbox_task",
+        "schedule": 5.0,
+    },
+}
+
 # --- RabbitMQ (event bus) ---------------------------------------------------------
 # Read by suerp_common.events via settings.RABBITMQ_URL.
 

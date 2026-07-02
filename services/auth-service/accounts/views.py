@@ -18,12 +18,14 @@ from accounts.serializers import (
 )
 from django.conf import settings
 from django.contrib.auth import authenticate
+from django.db import transaction
 from django.utils import timezone
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.views import APIView
 from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.tokens import RefreshToken
 from suerp_common.envelope import fail, ok
+from suerp_common.outbox import publish_event
 
 LOCKOUT_THRESHOLD = 5
 LOCKOUT_WINDOW_MINUTES = 15
@@ -63,7 +65,18 @@ class RegisterView(APIView):
         if not serializer.is_valid():
             return fail("Registration failed.", errors=serializer.errors, status=400)
 
-        user = serializer.save()
+        # User creation and the user.registered outbox row MUST commit or
+        # roll back together — this is the transactional-outbox guarantee.
+        # publish_event only ever inserts a row (never touches the broker),
+        # so nothing here talks to RabbitMQ; drain_outbox_task relays it later.
+        with transaction.atomic():
+            user = serializer.save()
+            publish_event(
+                "user.registered",
+                tenant_id=str(user.tenant_id),
+                payload={"user_id": str(user.id), "role": user.role},
+            )
+
         return ok(
             {"id": str(user.id), "email": user.email, "role": user.role},
             message="Registered.",
