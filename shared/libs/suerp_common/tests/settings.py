@@ -1,7 +1,7 @@
 """Minimal Django settings for exercising suerp_common in isolation."""
 
 SECRET_KEY = "test-only-secret"
-JWT_SIGNING_KEY = "test-jwt-key"
+JWT_SIGNING_KEY = "test-jwt-key-at-least-32-bytes-long-000"
 DEBUG = True
 
 INSTALLED_APPS = [
