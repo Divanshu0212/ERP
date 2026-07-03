@@ -30,6 +30,7 @@ function studentToken(): string {
 
 async function submitLogin() {
   const user = userEvent.setup();
+  await user.type(screen.getByLabelText(/institution/i), "acme-univ");
   await user.type(screen.getByLabelText(/email/i), "stu@acme.edu");
   await user.type(screen.getByLabelText(/password/i), "secret");
   await user.click(screen.getByRole("button", { name: /sign in/i }));
@@ -46,9 +47,8 @@ describe("LoginPage", () => {
 
   it("redirects to the student dashboard on successful login", async () => {
     post.mockResolvedValue({
-      access_token: studentToken(),
-      refresh_token: "refresh",
-      user: { id: "u1", email: "stu@acme.edu", role: "student", tenant_id: "acme" },
+      access: studentToken(),
+      refresh: "refresh",
     });
 
     render(<LoginPage />);
@@ -56,6 +56,7 @@ describe("LoginPage", () => {
 
     await waitFor(() => expect(replace).toHaveBeenCalledWith("/student"));
     expect(post).toHaveBeenCalledWith("/api/v1/auth/login", {
+      institution_slug: "acme-univ",
       email: "stu@acme.edu",
       password: "secret",
     });

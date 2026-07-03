@@ -7,6 +7,7 @@ import { login } from "@/lib/session";
 
 export default function LoginPage() {
   const router = useRouter();
+  const [institutionSlug, setInstitutionSlug] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -17,7 +18,7 @@ export default function LoginPage() {
     setError(null);
     setLoading(true);
     try {
-      const { redirectTo } = await login(email, password);
+      const { redirectTo } = await login(institutionSlug, email, password);
       router.replace(redirectTo);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Login failed. Please try again.";
@@ -33,6 +34,26 @@ export default function LoginPage() {
         <p className="mb-6 text-sm text-gray-500 dark:text-gray-400">SU-ERP</p>
 
         <form onSubmit={handleSubmit} noValidate className="space-y-4">
+          <div>
+            <label
+              htmlFor="institutionSlug"
+              className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300"
+            >
+              Institution
+            </label>
+            <input
+              id="institutionSlug"
+              name="institutionSlug"
+              type="text"
+              autoComplete="organization"
+              required
+              value={institutionSlug}
+              onChange={(e) => setInstitutionSlug(e.target.value)}
+              placeholder="e.g. demo-univ"
+              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
+            />
+          </div>
+
           <div>
             <label
               htmlFor="email"
