@@ -84,6 +84,7 @@ class User(AbstractBaseUser, PermissionsMixin):
         DRIVER = "driver", "Driver"
         ADMIN = "admin", "Admin"
         ALUMNI = "alumni", "Alumni"
+        SUPERADMIN = "superadmin", "Super Admin"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     tenant = models.ForeignKey(Institution, on_delete=models.PROTECT, related_name="users")
