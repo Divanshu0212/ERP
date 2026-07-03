@@ -31,7 +31,7 @@ from datetime import timedelta
 import pytest
 from django.utils import timezone
 from hostel.consumers import handle_invoice_created, handle_payment_failed, handle_payment_success
-from hostel.models import Allocation, Block, Room
+from hostel.models import Allocation, Block, PaymentOutcome, Room
 from hostel.tasks import PENDING_TIMEOUT, release_stale_pending_allocations
 from suerp_common.events import build_event
 from suerp_common.outbox import OutboxEvent
@@ -188,6 +188,105 @@ def test_payment_success_is_idempotent_confirms_once_and_emits_one_event():
     allocation.refresh_from_db()
     assert allocation.status == "confirmed"
     assert OutboxEvent.objects.filter(type="hostel.allocation.confirmed").count() == 1
+
+
+def test_out_of_order_payment_success_before_invoice_created_reconciles():
+    """OUT-OF-ORDER: payment.success lands before invoice.created stamps the
+    allocation. The success outcome is persisted (applied=False), the
+    allocation stays pending; when invoice.created lands it reconciles —
+    allocation confirmed, exactly one hostel.allocation.confirmed emitted, and
+    the PaymentOutcome flipped applied=True.
+    """
+    tenant_id = uuid.uuid4()
+    student_id = uuid.uuid4()
+    invoice_id = uuid.uuid4()
+    room = _make_room(tenant_id, capacity=2, occupied_count=1)
+    allocation = _make_allocation(tenant_id, room, student_id=student_id, status="pending")
+    # invoice_id NOT yet stamped (handle_invoice_created hasn't run).
+
+    # Payment success arrives first.
+    success_event = _payment_success_event(tenant_id, invoice_id=invoice_id, student_id=student_id)
+    handle_payment_success(success_event)
+
+    allocation.refresh_from_db()
+    assert allocation.status == "pending"
+    assert OutboxEvent.objects.filter(type="hostel.allocation.confirmed").count() == 0
+    outcome = PaymentOutcome.all_objects.get(tenant_id=tenant_id, invoice_id=invoice_id)
+    assert outcome.outcome == "success"
+    assert outcome.applied is False
+
+    # Now the correlation event lands — reconciliation applies the outcome.
+    created_event = _invoice_created_event(
+        tenant_id, invoice_id=invoice_id, student_id=student_id, allocation_id=allocation.id
+    )
+    handle_invoice_created(created_event)
+
+    allocation.refresh_from_db()
+    assert allocation.invoice_id == invoice_id
+    assert allocation.status == "confirmed"
+    assert OutboxEvent.objects.filter(type="hostel.allocation.confirmed").count() == 1
+
+    outcome.refresh_from_db()
+    assert outcome.applied is True
+
+
+def test_out_of_order_payment_failed_before_invoice_created_reconciles_release():
+    """OUT-OF-ORDER failure: payment.failed lands before invoice.created. When
+    invoice.created lands, reconciliation releases the allocation and frees the
+    room seat.
+    """
+    tenant_id = uuid.uuid4()
+    student_id = uuid.uuid4()
+    invoice_id = uuid.uuid4()
+    room = _make_room(tenant_id, capacity=2, occupied_count=1)
+    allocation = _make_allocation(tenant_id, room, student_id=student_id, status="pending")
+
+    failed_event = _payment_failed_event(tenant_id, invoice_id=invoice_id, student_id=student_id)
+    handle_payment_failed(failed_event)
+
+    allocation.refresh_from_db()
+    room.refresh_from_db()
+    assert allocation.status == "pending"
+    assert room.occupied_count == 1
+    outcome = PaymentOutcome.all_objects.get(tenant_id=tenant_id, invoice_id=invoice_id)
+    assert outcome.outcome == "failed"
+    assert outcome.applied is False
+
+    created_event = _invoice_created_event(
+        tenant_id, invoice_id=invoice_id, student_id=student_id, allocation_id=allocation.id
+    )
+    handle_invoice_created(created_event)
+
+    allocation.refresh_from_db()
+    room.refresh_from_db()
+    assert allocation.status == "released"
+    assert room.occupied_count == 0
+    outcome.refresh_from_db()
+    assert outcome.applied is True
+    assert OutboxEvent.objects.filter(type="hostel.allocation.released").count() == 1
+
+
+def test_timeout_guard_does_not_release_paid_allocation():
+    """Timeout guard: a stale pending allocation that HAS a success
+    PaymentOutcome for its invoice must NOT be released by the timeout task.
+    """
+    tenant_id = uuid.uuid4()
+    invoice_id = uuid.uuid4()
+    room = _make_room(tenant_id, capacity=2, occupied_count=1)
+    allocation = _make_allocation(tenant_id, room, status="pending", invoice_id=invoice_id)
+    old_time = timezone.now() - PENDING_TIMEOUT - timedelta(minutes=1)
+    Allocation.all_objects.filter(id=allocation.id).update(allocated_on=old_time)
+
+    PaymentOutcome.all_objects.create(
+        tenant_id=tenant_id, invoice_id=invoice_id, outcome="success", applied=False
+    )
+
+    release_stale_pending_allocations()
+
+    allocation.refresh_from_db()
+    room.refresh_from_db()
+    assert allocation.status == "pending"  # NOT released — it was paid.
+    assert room.occupied_count == 1
 
 
 def test_release_stale_pending_allocations_releases_timed_out_ones_only():
