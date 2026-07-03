@@ -1,0 +1,26 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://suerp/event-schemas/finance.payment.success.json",
+  "title": "finance.payment.success",
+  "description": "Emitted by finance-service when an invoice is paid (saga step 4). hostel-service correlates it to the allocation by invoice_id and confirms the seat.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["event_id", "type", "tenant_id", "occurred_at", "payload"],
+  "properties": {
+    "event_id": { "type": "string", "format": "uuid" },
+    "type": { "const": "finance.payment.success" },
+    "tenant_id": { "type": "string" },
+    "occurred_at": { "type": "string", "format": "date-time" },
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["invoice_id", "student_id", "purpose", "amount"],
+      "properties": {
+        "invoice_id": { "type": "string", "format": "uuid" },
+        "student_id": { "type": "string", "format": "uuid" },
+        "purpose": { "type": "string" },
+        "amount": { "type": "string", "description": "Decimal amount serialized as a string." }
+      }
+    }
+  }
+}

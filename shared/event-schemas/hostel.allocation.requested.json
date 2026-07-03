@@ -1,0 +1,25 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://suerp/event-schemas/hostel.allocation.requested.json",
+  "title": "hostel.allocation.requested",
+  "description": "Emitted by hostel-service when a student requests a room allocation (saga step 1). finance-service consumes it and raises an invoice.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["event_id", "type", "tenant_id", "occurred_at", "payload"],
+  "properties": {
+    "event_id": { "type": "string", "format": "uuid" },
+    "type": { "const": "hostel.allocation.requested" },
+    "tenant_id": { "type": "string" },
+    "occurred_at": { "type": "string", "format": "date-time" },
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["allocation_id", "student_id", "room_id"],
+      "properties": {
+        "allocation_id": { "type": "string", "format": "uuid" },
+        "student_id": { "type": "string", "format": "uuid" },
+        "room_id": { "type": "string", "format": "uuid" }
+      }
+    }
+  }
+}

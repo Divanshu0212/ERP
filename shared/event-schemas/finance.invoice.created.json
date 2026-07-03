@@ -1,0 +1,27 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://suerp/event-schemas/finance.invoice.created.json",
+  "title": "finance.invoice.created",
+  "description": "Emitted by finance-service after consuming hostel.allocation.requested (saga step 2). Carries allocation_id so the payment outcome can be correlated back to the allocation.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["event_id", "type", "tenant_id", "occurred_at", "payload"],
+  "properties": {
+    "event_id": { "type": "string", "format": "uuid" },
+    "type": { "const": "finance.invoice.created" },
+    "tenant_id": { "type": "string" },
+    "occurred_at": { "type": "string", "format": "date-time" },
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["invoice_id", "student_id", "allocation_id", "amount", "purpose"],
+      "properties": {
+        "invoice_id": { "type": "string", "format": "uuid" },
+        "student_id": { "type": "string", "format": "uuid" },
+        "allocation_id": { "type": "string", "format": "uuid" },
+        "amount": { "type": "string", "description": "Decimal amount serialized as a string (e.g. \"5000.00\")." },
+        "purpose": { "type": "string", "description": "Invoice purpose, e.g. \"hostel\"." }
+      }
+    }
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://suerp/event-schemas/user.registered.json",
+  "title": "user.registered",
+  "description": "Emitted by auth-service when a new user account is created. Envelope + payload as recorded by suerp_common.outbox.publish_event.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["event_id", "type", "tenant_id", "occurred_at", "payload"],
+  "properties": {
+    "event_id": { "type": "string", "format": "uuid" },
+    "type": { "const": "user.registered" },
+    "tenant_id": { "type": "string", "description": "Row-level tenant identifier." },
+    "occurred_at": { "type": "string", "format": "date-time" },
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["user_id", "role"],
+      "properties": {
+        "user_id": { "type": "string", "format": "uuid" },
+        "role": { "type": "string", "description": "Role assigned at registration (e.g. student, warden, admin)." }
+      }
+    }
+  }
+}

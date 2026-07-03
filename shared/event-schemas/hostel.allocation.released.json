@@ -1,0 +1,25 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://suerp/event-schemas/hostel.allocation.released.json",
+  "title": "hostel.allocation.released",
+  "description": "Emitted by hostel-service as the compensating action when a payment fails (or times out): the allocation is released and the room seat freed.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["event_id", "type", "tenant_id", "occurred_at", "payload"],
+  "properties": {
+    "event_id": { "type": "string", "format": "uuid" },
+    "type": { "const": "hostel.allocation.released" },
+    "tenant_id": { "type": "string" },
+    "occurred_at": { "type": "string", "format": "date-time" },
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["allocation_id", "student_id", "room_id"],
+      "properties": {
+        "allocation_id": { "type": "string", "format": "uuid" },
+        "student_id": { "type": "string", "format": "uuid" },
+        "room_id": { "type": "string", "format": "uuid" }
+      }
+    }
+  }
+}

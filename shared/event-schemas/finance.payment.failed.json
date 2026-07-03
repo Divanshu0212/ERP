@@ -1,0 +1,25 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://suerp/event-schemas/finance.payment.failed.json",
+  "title": "finance.payment.failed",
+  "description": "Emitted by finance-service when an invoice payment fails. hostel-service correlates it to the allocation by invoice_id and runs the compensating release.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["event_id", "type", "tenant_id", "occurred_at", "payload"],
+  "properties": {
+    "event_id": { "type": "string", "format": "uuid" },
+    "type": { "const": "finance.payment.failed" },
+    "tenant_id": { "type": "string" },
+    "occurred_at": { "type": "string", "format": "date-time" },
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["invoice_id", "student_id", "purpose"],
+      "properties": {
+        "invoice_id": { "type": "string", "format": "uuid" },
+        "student_id": { "type": "string", "format": "uuid" },
+        "purpose": { "type": "string" }
+      }
+    }
+  }
+}

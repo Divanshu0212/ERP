@@ -1,0 +1,26 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://suerp/event-schemas/grievance.scored.json",
+  "title": "grievance.scored",
+  "description": "Emitted by ai-service after scoring a grievance (VADER sentiment + keyword urgency). grievance-service auto-escalates high/critical tickets; notification-service messages the student (recipient echoed via raised_by).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["event_id", "type", "tenant_id", "occurred_at", "payload"],
+  "properties": {
+    "event_id": { "type": "string", "format": "uuid" },
+    "type": { "const": "grievance.scored" },
+    "tenant_id": { "type": "string" },
+    "occurred_at": { "type": "string", "format": "date-time" },
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ticket_id", "raised_by", "sentiment", "urgency"],
+      "properties": {
+        "ticket_id": { "type": "string", "format": "uuid" },
+        "raised_by": { "type": ["string", "null"], "description": "Recipient user id echoed from grievance.created; may be null if absent upstream." },
+        "sentiment": { "type": "number", "minimum": -1, "maximum": 1, "description": "VADER compound polarity score (-1..1)." },
+        "urgency": { "type": "string", "enum": ["low", "medium", "critical"], "description": "Rule-based urgency label." }
+      }
+    }
+  }
+}
