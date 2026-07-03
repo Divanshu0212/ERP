@@ -91,6 +91,63 @@ class AdminCreateUserSerializer(serializers.Serializer):
         )
 
 
+class InstitutionCreateSerializer(serializers.Serializer):
+    """Superadmin-side institution creation. Cross-tenant by design."""
+
+    slug = serializers.SlugField()
+    name = serializers.CharField(max_length=255)
+
+    def validate_slug(self, value):
+        if Institution.objects.filter(slug=value).exists():
+            raise serializers.ValidationError("An institution with this slug already exists.")
+        return value
+
+    def create(self, validated_data):
+        return Institution.objects.create(
+            slug=validated_data["slug"],
+            name=validated_data["name"],
+            is_active=True,
+        )
+
+
+class SuperadminCreateAdminSerializer(serializers.Serializer):
+    """Superadmin provisions a tenant admin. The target institution is looked
+    up by slug from the body (cross-tenant) — unlike AdminCreateUserSerializer,
+    which pins the tenant to the caller's own JWT claim."""
+
+    institution_slug = serializers.SlugField()
+    email = serializers.EmailField()
+    password = serializers.CharField(
+        write_only=True, min_length=8, style={"input_type": "password"}
+    )
+
+    def validate_institution_slug(self, value):
+        try:
+            institution = Institution.objects.get(slug=value)
+        except Institution.DoesNotExist as exc:
+            raise serializers.ValidationError("Unknown institution.") from exc
+        if not institution.is_active:
+            raise serializers.ValidationError("Institution is not active.")
+        self._institution = institution
+        return value
+
+    def validate(self, attrs):
+        institution = getattr(self, "_institution", None)
+        email = User.objects.normalize_email(attrs["email"])
+        if institution and User.objects.filter(tenant=institution, email=email).exists():
+            raise serializers.ValidationError({"email": "A user with this email already exists."})
+        attrs["email"] = email
+        return attrs
+
+    def create(self, validated_data):
+        return User.objects.create_user(
+            tenant=self._institution,
+            email=validated_data["email"],
+            password=validated_data["password"],
+            role=User.Role.ADMIN,
+        )
+
+
 class LoginSerializer(serializers.Serializer):
     institution_slug = serializers.SlugField()
     email = serializers.EmailField()

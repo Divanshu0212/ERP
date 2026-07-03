@@ -12,11 +12,13 @@ service treats this shape as its contract with auth-service.
 from accounts.models import Institution, LoginAudit, User
 from accounts.serializers import (
     AdminCreateUserSerializer,
+    InstitutionCreateSerializer,
     InstitutionSerializer,
     LoginSerializer,
     MeSerializer,
     RefreshSerializer,
     RegisterSerializer,
+    SuperadminCreateAdminSerializer,
     UserListSerializer,
 )
 from django.conf import settings
@@ -250,5 +252,76 @@ class UserAdminView(ListAPIView):
         return ok(
             {"id": str(user.id), "email": user.email, "role": user.role},
             message="User created.",
+            status=201,
+        )
+
+
+PLATFORM_SLUG = "platform"
+
+
+class PlatformInstitutionView(ListAPIView):
+    """Platform-superadmin management of institutions (tenants), CROSS-tenant.
+
+    Unlike every other endpoint in this service these are deliberately NOT
+    tenant-filtered: the superadmin operates across all institutions. GET lists
+    every institution (newest first) except the operator-internal ``platform``
+    tenant; POST creates a new institution.
+    """
+
+    permission_classes = [role_required("superadmin")]
+    serializer_class = InstitutionSerializer
+
+    def get_queryset(self):
+        return Institution.objects.exclude(slug=PLATFORM_SLUG).order_by("-created_at")
+
+    def post(self, request):
+        serializer = InstitutionCreateSerializer(data=request.data)
+        if not serializer.is_valid():
+            return fail("Institution creation failed.", errors=serializer.errors, status=400)
+
+        institution = serializer.save()
+        return ok(
+            {
+                "id": str(institution.id),
+                "slug": institution.slug,
+                "name": institution.name,
+                "is_active": institution.is_active,
+            },
+            message="Institution created.",
+            status=201,
+        )
+
+
+class PlatformAdminView(APIView):
+    """Platform-superadmin provisioning of a tenant admin, CROSS-tenant.
+
+    Creates a role=admin User in the TARGET institution (looked up by slug in
+    the body), and emits the user.registered outbox event in the same
+    transaction (see RegisterView for the transactional-outbox guarantee).
+    """
+
+    permission_classes = [role_required("superadmin")]
+
+    def post(self, request):
+        serializer = SuperadminCreateAdminSerializer(data=request.data)
+        if not serializer.is_valid():
+            return fail("Admin creation failed.", errors=serializer.errors, status=400)
+
+        with transaction.atomic():
+            user = serializer.save()
+            publish_event(
+                "user.registered",
+                tenant_id=str(user.tenant_id),
+                payload={"user_id": str(user.id), "role": user.role},
+            )
+
+        return ok(
+            {
+                "id": str(user.id),
+                "email": user.email,
+                "role": user.role,
+                "institution_slug": user.tenant.slug,
+            },
+            message="Admin created.",
             status=201,
         )

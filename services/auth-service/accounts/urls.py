@@ -4,6 +4,8 @@ from accounts.views import (
     InstitutionView,
     LoginView,
     MeView,
+    PlatformAdminView,
+    PlatformInstitutionView,
     RefreshView,
     RegisterView,
     UserAdminView,
@@ -17,4 +19,6 @@ urlpatterns = [
     path("me", MeView.as_view(), name="auth-me"),
     path("institution", InstitutionView.as_view(), name="auth-institution"),
     path("users", UserAdminView.as_view(), name="auth-users"),
+    path("institutions", PlatformInstitutionView.as_view(), name="auth-institutions"),
+    path("admins", PlatformAdminView.as_view(), name="auth-admins"),
 ]
