@@ -7,8 +7,75 @@ scrape_configs:
     static_configs:
       - targets: ["localhost:9090"]
 
-  # Backend services will expose /metrics once they exist (Phase 3+).
-  # Add per-service targets here as they come online, e.g.:
-  # - job_name: auth-service
-  #   static_configs:
-  #     - targets: ["auth-service:8000"]
+  # --- Django services (django-prometheus, /metrics on :8000) ---
+  # All targets resolve on the shared `suerp-net` Docker network.
+
+  - job_name: auth
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["auth-service:8000"]
+
+  - job_name: finance
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["finance-service:8000"]
+
+  - job_name: hostel
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["hostel-service:8000"]
+
+  - job_name: transport
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["transport-service:8000"]
+
+  - job_name: grievance
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["grievance-service:8000"]
+
+  - job_name: notification
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["notification-service:8000"]
+
+  - job_name: analytics
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["analytics-service:8000"]
+
+  - job_name: attendance
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["attendance-service:8000"]
+
+  - job_name: canteen
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["canteen-service:8000"]
+
+  - job_name: exam
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["exam-service:8000"]
+
+  - job_name: library
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["library-service:8000"]
+
+  - job_name: placement
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["placement-service:8000"]
+
+  - job_name: student
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["student-service:8000"]
+
+  # --- ai-service (FastAPI, :8001) ---
+  # EXCLUDED: this service uses FastAPI without prometheus-fastapi-instrumentator,
+  # so it does not expose a /metrics endpoint. Add a scrape job here once an
+  # instrumentator is wired in (see task-11-2-report.md).
