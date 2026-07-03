@@ -119,3 +119,23 @@ services:
       - suerp-net
     depends_on:
       - prometheus
+
+  gateway:
+    # Nginx reverse proxy — the single public entry point. Routes /api/v1/*
+    # to the owning backend service on the shared suerp-net network.
+    build:
+      context: ../gateway
+      dockerfile: Dockerfile
+    image: suerp/gateway
+    container_name: suerp-gateway
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    networks:
+      - suerp-net
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
