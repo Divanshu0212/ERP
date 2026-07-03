@@ -1,0 +1,20 @@
+# ai-service (Task 7.x) — FastAPI microservice (NOT Django).
+#
+# Rule-based / lightweight-ML only: vaderSentiment for polarity and a small
+# scikit-learn TF-IDF classifier for chatbot intent. NO transformers/torch
+# (deliberate project decision — keep the image small, inference CPU-cheap,
+# and startup fast). This service does NOT depend on suerp_common's Django
+# pieces; the event envelope + pika publish/consume are replicated locally in
+# app/consumer.py so there is no django.conf.settings requirement.
+
+fastapi
+uvicorn[standard]
+vaderSentiment
+scikit-learn
+pika
+pyjwt
+httpx
+
+# Test tooling
+pytest
+pytest-asyncio
