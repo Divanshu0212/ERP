@@ -1,6 +1,13 @@
-"""Auth endpoints: register, login, refresh, me."""
+"""Auth endpoints: register, login, refresh, me, institution, users."""
 
-from accounts.views import LoginView, MeView, RefreshView, RegisterView
+from accounts.views import (
+    InstitutionView,
+    LoginView,
+    MeView,
+    RefreshView,
+    RegisterView,
+    UserAdminView,
+)
 from django.urls import path
 
 urlpatterns = [
@@ -8,4 +15,6 @@ urlpatterns = [
     path("login", LoginView.as_view(), name="auth-login"),
     path("refresh", RefreshView.as_view(), name="auth-refresh"),
     path("me", MeView.as_view(), name="auth-me"),
+    path("institution", InstitutionView.as_view(), name="auth-institution"),
+    path("users", UserAdminView.as_view(), name="auth-users"),
 ]

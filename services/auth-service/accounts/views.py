@@ -11,21 +11,26 @@ service treats this shape as its contract with auth-service.
 
 from accounts.models import Institution, LoginAudit, User
 from accounts.serializers import (
+    AdminCreateUserSerializer,
+    InstitutionSerializer,
     LoginSerializer,
     MeSerializer,
     RefreshSerializer,
     RegisterSerializer,
+    UserListSerializer,
 )
 from django.conf import settings
 from django.contrib.auth import authenticate
 from django.db import transaction
 from django.utils import timezone
+from rest_framework.generics import ListAPIView
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.views import APIView
 from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.tokens import RefreshToken
 from suerp_common.envelope import fail, ok
 from suerp_common.outbox import publish_event
+from suerp_common.permissions import role_required
 
 LOCKOUT_THRESHOLD = 5
 LOCKOUT_WINDOW_MINUTES = 15
@@ -189,3 +194,61 @@ class MeView(APIView):
             }
         )
         return ok(serializer.data)
+
+
+class InstitutionView(APIView):
+    """Return the caller's own institution, resolved from the JWT tenant claim."""
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        try:
+            institution = Institution.objects.get(pk=request.user.tenant_id)
+        except Institution.DoesNotExist:
+            return fail("Institution no longer exists.", status=404)
+        return ok(InstitutionSerializer(institution).data)
+
+
+class UserAdminView(ListAPIView):
+    """Admin-only management of the caller's tenant users.
+
+    GET lists the tenant's users (paginated); POST creates a user in the
+    admin's own institution. ``User.objects`` is NOT tenant-scoped (auth-service
+    owns identity and must query across tenants during login), so the tenant
+    filter here is explicit — the admin's tenant comes from their verified JWT
+    claim, never from the request body.
+    """
+
+    permission_classes = [role_required("admin")]
+    serializer_class = UserListSerializer
+
+    def get_queryset(self):
+        return User.objects.filter(tenant_id=self.request.user.tenant_id).order_by("date_joined")
+
+    def post(self, request):
+        try:
+            institution = Institution.objects.get(pk=request.user.tenant_id)
+        except Institution.DoesNotExist:
+            return fail("Institution no longer exists.", status=404)
+
+        serializer = AdminCreateUserSerializer(
+            data=request.data, context={"institution": institution}
+        )
+        if not serializer.is_valid():
+            return fail("User creation failed.", errors=serializer.errors, status=400)
+
+        # User row and its user.registered outbox event commit or roll back
+        # together — the transactional-outbox guarantee (see RegisterView).
+        with transaction.atomic():
+            user = serializer.save()
+            publish_event(
+                "user.registered",
+                tenant_id=str(user.tenant_id),
+                payload={"user_id": str(user.id), "role": user.role},
+            )
+
+        return ok(
+            {"id": str(user.id), "email": user.email, "role": user.role},
+            message="User created.",
+            status=201,
+        )
