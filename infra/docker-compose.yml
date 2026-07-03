@@ -22,7 +22,10 @@ x-django-env: &django-env
   DEBUG: "1"
   ALLOWED_HOSTS: "*"
   JWT_SIGNING_KEY: dev-insecure-shared-jwt-key
-  READ_DATABASE_URL: ""
+  # READ_DATABASE_URL is intentionally omitted: settings reads it with
+  # default=DATABASE_URL, so leaving it unset makes read_db mirror the primary.
+  # Passing it as an empty string would override that default and crash
+  # dj_database_url.parse("").
   REDIS_URL: redis://redis:6379/0
   RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
 
@@ -127,6 +130,7 @@ services:
   prometheus:
     image: prom/prometheus:latest
     container_name: suerp-prometheus
+    profiles: ["observability"]
     restart: unless-stopped
     volumes:
       - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
@@ -138,6 +142,7 @@ services:
   grafana:
     image: grafana/grafana:latest
     container_name: suerp-grafana
+    profiles: ["observability"]
     restart: unless-stopped
     environment:
       GF_SECURITY_ADMIN_USER: admin
@@ -167,37 +172,8 @@ services:
       - "8080:8080"
     networks:
       - suerp-net
-    depends_on:
-      auth-service:
-        condition: service_started
-      finance-service:
-        condition: service_started
-      hostel-service:
-        condition: service_started
-      transport-service:
-        condition: service_started
-      grievance-service:
-        condition: service_started
-      notification-service:
-        condition: service_started
-      ai-service:
-        condition: service_started
-      # Stub services are also nginx upstreams; nginx resolves ALL upstream
-      # hostnames at startup, so every referenced service must exist first.
-      student-service:
-        condition: service_started
-      attendance-service:
-        condition: service_started
-      exam-service:
-        condition: service_started
-      library-service:
-        condition: service_started
-      canteen-service:
-        condition: service_started
-      placement-service:
-        condition: service_started
-      analytics-service:
-        condition: service_started
+    # No app depends_on: nginx resolves upstreams lazily via Docker DNS, so the
+    # gateway starts regardless of which services are running (compose profiles).
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/health || exit 1"]
       interval: 10s
@@ -220,7 +196,7 @@ services:
     environment: &auth-env
       <<: *django-env
       DATABASE_URL: postgres://suerp:suerp@pgbouncer:6432/auth
-    command: &web-command sh -c "python manage.py migrate --noinput && gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 3"
+    command: &web-command sh -c "python manage.py migrate --noinput && gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 1 --timeout 120 --graceful-timeout 30"
 
   finance-service:
     <<: *django-svc
@@ -269,6 +245,7 @@ services:
   transport-service:
     <<: *django-svc
     container_name: transport-service
+    profiles: ["full"]
     build: &transport-build
       context: ..
       dockerfile: services/transport-service/Dockerfile
@@ -280,6 +257,7 @@ services:
   student-service:
     <<: *django-svc
     container_name: student-service
+    profiles: ["full"]
     build:
       context: ..
       dockerfile: services/student-service/Dockerfile
@@ -291,6 +269,7 @@ services:
   attendance-service:
     <<: *django-svc
     container_name: attendance-service
+    profiles: ["full"]
     build:
       context: ..
       dockerfile: services/attendance-service/Dockerfile
@@ -302,6 +281,7 @@ services:
   exam-service:
     <<: *django-svc
     container_name: exam-service
+    profiles: ["full"]
     build:
       context: ..
       dockerfile: services/exam-service/Dockerfile
@@ -313,6 +293,7 @@ services:
   library-service:
     <<: *django-svc
     container_name: library-service
+    profiles: ["full"]
     build:
       context: ..
       dockerfile: services/library-service/Dockerfile
@@ -324,6 +305,7 @@ services:
   canteen-service:
     <<: *django-svc
     container_name: canteen-service
+    profiles: ["full"]
     build:
       context: ..
       dockerfile: services/canteen-service/Dockerfile
@@ -335,6 +317,7 @@ services:
   placement-service:
     <<: *django-svc
     container_name: placement-service
+    profiles: ["full"]
     build:
       context: ..
       dockerfile: services/placement-service/Dockerfile
@@ -346,6 +329,7 @@ services:
   analytics-service:
     <<: *django-svc
     container_name: analytics-service
+    profiles: ["full"]
     build:
       context: ..
       dockerfile: services/analytics-service/Dockerfile
@@ -363,42 +347,43 @@ services:
     container_name: auth-celery
     build: *auth-build
     environment: *auth-env
-    command: celery -A config worker -B -l info
+    command: celery -A config worker -B -l info --concurrency=1
 
   finance-celery:
     <<: *django-svc
     container_name: finance-celery
     build: *finance-build
     environment: *finance-env
-    command: celery -A config worker -B -l info
+    command: celery -A config worker -B -l info --concurrency=1
 
   grievance-celery:
     <<: *django-svc
     container_name: grievance-celery
     build: *grievance-build
     environment: *grievance-env
-    command: celery -A config worker -B -l info
+    command: celery -A config worker -B -l info --concurrency=1
 
   hostel-celery:
     <<: *django-svc
     container_name: hostel-celery
     build: *hostel-build
     environment: *hostel-env
-    command: celery -A config worker -B -l info
+    command: celery -A config worker -B -l info --concurrency=1
 
   notification-celery:
     <<: *django-svc
     container_name: notification-celery
     build: *notification-build
     environment: *notification-env
-    command: celery -A config worker -B -l info
+    command: celery -A config worker -B -l info --concurrency=1
 
   transport-celery:
     <<: *django-svc
     container_name: transport-celery
+    profiles: ["full"]
     build: *transport-build
     environment: *transport-env
-    command: celery -A config worker -B -l info
+    command: celery -A config worker -B -l info --concurrency=1
 
   # =========================================================================
   # Event consumers (manage.py consume_events) — process inbound domain events.
@@ -435,6 +420,7 @@ services:
   transport-consumer:
     <<: *django-svc
     container_name: transport-consumer
+    profiles: ["full"]
     build: *transport-build
     environment: *transport-env
     command: python manage.py consume_events
