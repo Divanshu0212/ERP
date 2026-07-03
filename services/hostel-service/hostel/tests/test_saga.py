@@ -290,17 +290,26 @@ def test_timeout_guard_does_not_release_paid_allocation():
 
 
 def test_release_stale_pending_allocations_releases_timed_out_ones_only():
+    """A genuinely unpaid, INVOICED, stale-pending allocation (invoice_id set,
+    no PaymentOutcome) must still be released — the timeout compensation must
+    keep working. A fresh (not yet stale) invoiced allocation is left alone.
+    """
     tenant_id = uuid.uuid4()
 
     stale_room = _make_room(tenant_id, capacity=2, occupied_count=1, room_no="201")
-    stale_allocation = _make_allocation(tenant_id, stale_room, status="pending")
+    stale_allocation = _make_allocation(
+        tenant_id, stale_room, status="pending", invoice_id=uuid.uuid4()
+    )
     old_time = timezone.now() - PENDING_TIMEOUT - timedelta(minutes=1)
     Allocation.all_objects.filter(id=stale_allocation.id).update(allocated_on=old_time)
 
     fresh_room = _make_room(tenant_id, capacity=2, occupied_count=1, room_no="202")
-    fresh_allocation = _make_allocation(tenant_id, fresh_room, status="pending")
+    fresh_allocation = _make_allocation(
+        tenant_id, fresh_room, status="pending", invoice_id=uuid.uuid4()
+    )
 
-    release_stale_pending_allocations()
+    released = release_stale_pending_allocations()
+    assert released == 1
 
     stale_allocation.refresh_from_db()
     stale_room.refresh_from_db()
@@ -311,3 +320,71 @@ def test_release_stale_pending_allocations_releases_timed_out_ones_only():
     fresh_room.refresh_from_db()
     assert fresh_allocation.status == "pending"
     assert fresh_room.occupied_count == 1
+
+
+def test_timeout_does_not_release_uninvoiced_stale_allocation():
+    """An allocation with no invoice_id has not reached the payment stage of the
+    saga, so the 30-min PENDING clock must NOT release it (premature).
+    """
+    tenant_id = uuid.uuid4()
+    room = _make_room(tenant_id, capacity=2, occupied_count=1)
+    allocation = _make_allocation(tenant_id, room, status="pending", invoice_id=None)
+    old_time = timezone.now() - PENDING_TIMEOUT - timedelta(minutes=1)
+    Allocation.all_objects.filter(id=allocation.id).update(allocated_on=old_time)
+
+    released = release_stale_pending_allocations()
+    assert released == 0
+
+    allocation.refresh_from_db()
+    room.refresh_from_db()
+    assert allocation.status == "pending"
+    assert room.occupied_count == 1
+
+
+def test_timeout_never_releases_paid_but_uncorrelated_allocation():
+    """SAGA-TIMEOUT HOLE (reviewer scenario): finance.payment.success is recorded
+    as PaymentOutcome(applied=False) while the allocation is still PENDING and
+    its invoice_id is NULL (finance.invoice.created not yet processed). If the
+    30-min timeout fires in this window it must NOT release the already-paid
+    allocation. Once invoice.created lands it must reconcile to CONFIRMED.
+    """
+    tenant_id = uuid.uuid4()
+    student_id = uuid.uuid4()
+    invoice_id = uuid.uuid4()
+    room = _make_room(tenant_id, capacity=2, occupied_count=1)
+    # Allocation stays PENDING with invoice_id NULL — invoice.created hasn't run.
+    allocation = _make_allocation(tenant_id, room, student_id=student_id, status="pending")
+    old_time = timezone.now() - PENDING_TIMEOUT - timedelta(minutes=1)
+    Allocation.all_objects.filter(id=allocation.id).update(allocated_on=old_time)
+
+    # payment.success arrived first: recorded but not yet applied.
+    success_event = _payment_success_event(tenant_id, invoice_id=invoice_id, student_id=student_id)
+    handle_payment_success(success_event)
+
+    allocation.refresh_from_db()
+    assert allocation.status == "pending"
+    assert allocation.invoice_id is None
+    outcome = PaymentOutcome.all_objects.get(tenant_id=tenant_id, invoice_id=invoice_id)
+    assert outcome.applied is False
+
+    # Timeout fires in the vulnerable window — must NOT release the paid seat.
+    released = release_stale_pending_allocations()
+    assert released == 0
+
+    allocation.refresh_from_db()
+    room.refresh_from_db()
+    assert allocation.status == "pending"  # NOT released — it was paid.
+    assert room.occupied_count == 1
+
+    # invoice.created finally lands — reconciles to CONFIRMED, one event emitted.
+    created_event = _invoice_created_event(
+        tenant_id, invoice_id=invoice_id, student_id=student_id, allocation_id=allocation.id
+    )
+    handle_invoice_created(created_event)
+
+    allocation.refresh_from_db()
+    assert allocation.invoice_id == invoice_id
+    assert allocation.status == "confirmed"
+    assert OutboxEvent.objects.filter(type="hostel.allocation.confirmed").count() == 1
+    outcome.refresh_from_db()
+    assert outcome.applied is True
