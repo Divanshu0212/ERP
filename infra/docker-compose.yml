@@ -182,6 +182,22 @@ services:
         condition: service_started
       ai-service:
         condition: service_started
+      # Stub services are also nginx upstreams; nginx resolves ALL upstream
+      # hostnames at startup, so every referenced service must exist first.
+      student-service:
+        condition: service_started
+      attendance-service:
+        condition: service_started
+      exam-service:
+        condition: service_started
+      library-service:
+        condition: service_started
+      canteen-service:
+        condition: service_started
+      placement-service:
+        condition: service_started
+      analytics-service:
+        condition: service_started
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/health || exit 1"]
       interval: 10s
