@@ -47,9 +47,22 @@ def release_stale_pending_allocations() -> int:
     of the batch from being processed.
     """
     cutoff = timezone.now() - PENDING_TIMEOUT
+    # Only invoiced allocations are candidates for the timeout compensation. An
+    # allocation with no ``invoice_id`` hasn't even reached the payment stage of
+    # the saga, so timing it out on the 30-min PENDING clock is premature. This
+    # ``invoice_id__isnull=False`` filter is ALSO what closes the saga-timeout
+    # hole: in the out-of-order window a ``finance.payment.success`` can be
+    # recorded as ``PaymentOutcome(applied=False)`` BEFORE
+    # ``finance.invoice.created`` stamps the allocation, so a PAID allocation
+    # still has ``invoice_id IS NULL``. Excluding null-invoice allocations here
+    # means such a paid-but-uncorrelated allocation is never released regardless
+    # of event ordering — once invoice.created lands it reconciles to CONFIRMED
+    # and is no longer pending.
     stale_ids = list(
         Allocation.all_objects.filter(
-            status=Allocation.Status.PENDING, allocated_on__lt=cutoff
+            status=Allocation.Status.PENDING,
+            allocated_on__lt=cutoff,
+            invoice_id__isnull=False,
         ).values_list("id", flat=True)
     )
 
@@ -60,18 +73,17 @@ def release_stale_pending_allocations() -> int:
                 allocation = Allocation.all_objects.select_for_update().get(id=allocation_id)
                 if allocation.status != Allocation.Status.PENDING:
                     continue  # already handled (e.g. by a payment event) — skip
-                # Belt-and-suspenders: never release a PAID allocation that is
-                # somehow still pending (e.g. a success PaymentOutcome recorded
-                # but its correlation event hasn't reconciled yet). Releasing a
-                # paid seat would lose the student's confirmation.
-                if (
-                    allocation.invoice_id is not None
-                    and PaymentOutcome.all_objects.filter(
-                        tenant_id=allocation.tenant_id,
-                        invoice_id=allocation.invoice_id,
-                        outcome=PaymentOutcome.Outcome.SUCCESS,
-                    ).exists()
-                ):
+                if allocation.invoice_id is None:
+                    continue  # not invoiced yet — not a timeout candidate
+                # Never release an invoiced allocation that has a recorded
+                # payment outcome (in particular a success): its terminal event
+                # arrived and is either applied or awaiting correlation. The
+                # null-invoice filter above already handles the pre-correlation
+                # window; this guards the correlated-but-not-yet-final case.
+                if PaymentOutcome.all_objects.filter(
+                    tenant_id=allocation.tenant_id,
+                    invoice_id=allocation.invoice_id,
+                ).exists():
                     continue
                 room = Room.all_objects.select_for_update().get(pk=allocation.room_id)
                 allocation.status = Allocation.Status.RELEASED

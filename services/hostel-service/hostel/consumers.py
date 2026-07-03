@@ -181,8 +181,13 @@ def handle_invoice_created(event: dict) -> None:
             .filter(tenant_id=tenant_id, invoice_id=invoice_id, applied=False)
             .first()
         )
-        if pending_outcome is not None and allocation.status == Allocation.Status.PENDING:
-            _apply_outcome(allocation, pending_outcome.outcome, tenant_id)
+        if pending_outcome is not None:
+            if allocation.status == Allocation.Status.PENDING:
+                _apply_outcome(allocation, pending_outcome.outcome, tenant_id)
+            # else: the allocation already left PENDING via some other path, so
+            # there's nothing to confirm/release — but we must NOT leave a stale
+            # applied=False row behind (it would look like an unreconciled
+            # outcome forever). Mark it applied either way.
             pending_outcome.applied = True
             pending_outcome.save(update_fields=["applied"])
 
