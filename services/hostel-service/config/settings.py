@@ -149,10 +149,19 @@ CELERY_TIMEZONE = TIME_ZONE
 # seconds so events committed by any view/task get relayed to RabbitMQ with
 # low latency. Mirrors auth-service/config/settings.py's own beat schedule,
 # under this service's own domain app (hostel) and task name.
+#
+# release-stale-pending-allocations-hostel (Task 4.9) runs the saga's TIMEOUT
+# compensating action every 60s: any Allocation stuck ``pending`` longer than
+# ``hostel.tasks.PENDING_TIMEOUT`` (finance-service never settled its
+# invoice) gets released and its room seat freed. See hostel/tasks.py.
 CELERY_BEAT_SCHEDULE = {
     "drain-outbox-hostel": {
         "task": "hostel.drain_outbox_task",
         "schedule": 5.0,
+    },
+    "release-stale-pending-allocations-hostel": {
+        "task": "hostel.release_stale_pending_allocations",
+        "schedule": 60.0,
     },
 }
 
