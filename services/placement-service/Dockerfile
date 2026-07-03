@@ -21,7 +21,7 @@ COPY shared/libs/suerp_common /app/shared/libs/suerp_common
 COPY services/placement-service/requirements.txt /app/services/placement-service/requirements.txt
 
 RUN pip install --upgrade pip \
-    && pip install -r /app/services/placement-service/requirements.txt
+    && cd /app/services/placement-service && pip install -r requirements.txt
 
 # --- runtime stage: copy app code and run gunicorn -------------------------
 FROM python:3.12-slim AS runtime

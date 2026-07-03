@@ -21,7 +21,7 @@ COPY shared/libs/suerp_common /app/shared/libs/suerp_common
 COPY services/analytics-service/requirements.txt /app/services/analytics-service/requirements.txt
 
 RUN pip install --upgrade pip \
-    && pip install -r /app/services/analytics-service/requirements.txt
+    && cd /app/services/analytics-service && pip install -r requirements.txt
 
 # --- runtime stage: copy app code and run gunicorn -------------------------
 FROM python:3.12-slim AS runtime
