@@ -1,0 +1,277 @@
+name: CI
+
+on:
+  push:
+    branches: [main, "phase-*"]
+  pull_request:
+    branches: [main, "phase-*"]
+
+# Cancel superseded runs on the same ref to save CI minutes.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: "3.12"
+  NODE_VERSION: "20"
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # python-test: lint + test + coverage per service.
+  #
+  # Coverage thresholds (see `cov_fail_under` in the matrix):
+  #   Full services (auth/finance/grievance/transport/hostel/notification) have
+  #   real test suites -> --cov-fail-under=70.
+  #   ai-service is FastAPI (TestClient) with solid coverage -> 70.
+  #   Stub services (analytics/attendance/canteen/exam/library/placement/student)
+  #   are thin prototype CRUD with a single test file -> threshold 0 (coverage
+  #   still reported via term-missing, just not gated). Prefer green CI over
+  #   aspirational gates; raise these as the stubs mature.
+  # ---------------------------------------------------------------------------
+  python-test:
+    name: python-test (${{ matrix.service }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # --- Full Django services: gate at 70% ---
+          - service: auth-service
+            django: true
+            cov_fail_under: 70
+          - service: finance-service
+            django: true
+            cov_fail_under: 70
+          - service: grievance-service
+            django: true
+            cov_fail_under: 70
+          - service: transport-service
+            django: true
+            cov_fail_under: 70
+          - service: hostel-service
+            django: true
+            cov_fail_under: 70
+          - service: notification-service
+            django: true
+            cov_fail_under: 70
+          # --- FastAPI service ---
+          - service: ai-service
+            django: false
+            cov_fail_under: 70
+          # --- Stub Django services: report coverage but do not gate (0) ---
+          - service: analytics-service
+            django: true
+            cov_fail_under: 0
+          - service: attendance-service
+            django: true
+            cov_fail_under: 0
+          - service: canteen-service
+            django: true
+            cov_fail_under: 0
+          - service: exam-service
+            django: true
+            cov_fail_under: 0
+          - service: library-service
+            django: true
+            cov_fail_under: 0
+          - service: placement-service
+            django: true
+            cov_fail_under: 0
+          - service: student-service
+            django: true
+            cov_fail_under: 0
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: suerp
+          POSTGRES_PASSWORD: suerp
+          POSTGRES_DB: suerp_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U suerp"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgres://suerp:suerp@localhost:5432/suerp_test
+      READ_DATABASE_URL: postgres://suerp:suerp@localhost:5432/suerp_test
+      REDIS_URL: redis://localhost:6379/0
+      JWT_SIGNING_KEY: ci-test-signing-key-not-secret
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+
+      - name: Install lint + coverage tooling
+        run: uv pip install --system ruff black isort pytest-cov
+
+      - name: Install service dependencies
+        working-directory: services/${{ matrix.service }}
+        run: uv pip install --system -r requirements.txt
+
+      # Lint from repo root so root pyproject.toml config is picked up.
+      # Applies to every service (Django + FastAPI) and, transitively, the
+      # shared lib is linted when auth/finance/etc. import it — but we also
+      # lint the shared source directly once below in the shared job region.
+      - name: Ruff
+        run: ruff check services/${{ matrix.service }}
+
+      - name: Black (check)
+        run: black --check services/${{ matrix.service }}
+
+      - name: isort (check)
+        run: isort --check-only services/${{ matrix.service }}
+
+      - name: Pytest + coverage
+        working-directory: services/${{ matrix.service }}
+        run: pytest --cov --cov-report=term-missing --cov-fail-under=${{ matrix.cov_fail_under }}
+
+  # ---------------------------------------------------------------------------
+  # shared-lib: lint + test the shared suerp_common library on its own.
+  # ---------------------------------------------------------------------------
+  shared-lib:
+    name: shared-lib
+    runs-on: ubuntu-latest
+    env:
+      JWT_SIGNING_KEY: ci-test-signing-key-not-secret
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+      - name: Install shared lib + tooling
+        run: |
+          uv pip install --system ruff black isort pytest-cov
+          # [test] extra pulls in pytest + pytest-django (tests use
+          # DJANGO_SETTINGS_MODULE=tests.settings).
+          uv pip install --system -e "shared/libs/suerp_common[test]"
+      - name: Ruff
+        run: ruff check shared/libs/suerp_common
+      - name: Black (check)
+        run: black --check shared/libs/suerp_common
+      - name: isort (check)
+        run: isort --check-only shared/libs/suerp_common
+      - name: Pytest
+        working-directory: shared/libs/suerp_common
+        run: pytest -q
+
+  # ---------------------------------------------------------------------------
+  # security: static security scan + dependency audit.
+  # ---------------------------------------------------------------------------
+  security:
+    name: security
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+      - name: Install security tooling
+        run: uv pip install --system bandit pip-audit
+      # -ll = report medium+ severity (skip low noise); skip test files.
+      - name: Bandit
+        run: bandit -r services/ -ll -x '*/tests/*,*/test_*.py,*_test.py'
+      # Best-effort: pinned deps can surface advisories with no fix available;
+      # do not fail the pipeline on those.
+      - name: pip-audit
+        continue-on-error: true
+        run: pip-audit --skip-editable || true
+
+  # ---------------------------------------------------------------------------
+  # docker-build: build every service image + the gateway (no push).
+  # ---------------------------------------------------------------------------
+  docker-build:
+    name: docker-build (${{ matrix.image }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        image:
+          - { name: ai-service, context: services/ai-service }
+          - { name: analytics-service, context: services/analytics-service }
+          - { name: attendance-service, context: services/attendance-service }
+          - { name: auth-service, context: services/auth-service }
+          - { name: canteen-service, context: services/canteen-service }
+          - { name: exam-service, context: services/exam-service }
+          - { name: finance-service, context: services/finance-service }
+          - { name: grievance-service, context: services/grievance-service }
+          - { name: hostel-service, context: services/hostel-service }
+          - { name: library-service, context: services/library-service }
+          - { name: notification-service, context: services/notification-service }
+          - { name: placement-service, context: services/placement-service }
+          - { name: student-service, context: services/student-service }
+          - { name: transport-service, context: services/transport-service }
+          - { name: gateway, context: gateway }
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Build image (no push)
+        uses: docker/build-push-action@v6
+        with:
+          # Django services install `-e ../../shared/libs/suerp_common`, so their
+          # build context must be the repo root. ai-service and the gateway are
+          # self-contained and build from their own directory (their Dockerfiles
+          # COPY relative to that dir).
+          context: ${{ (matrix.image.name == 'gateway' || matrix.image.name == 'ai-service') && matrix.image.context || '.' }}
+          file: ${{ matrix.image.context }}/Dockerfile
+          push: false
+          tags: suerp/${{ matrix.image.name }}:ci
+          cache-from: type=gha,scope=${{ matrix.image.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.image.name }}
+
+  # ---------------------------------------------------------------------------
+  # frontend: Next.js unit tests + production build.
+  # ---------------------------------------------------------------------------
+  frontend:
+    name: frontend
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend/su-erp-web
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/su-erp-web/package-lock.json
+      - name: Install dependencies
+        run: npm ci
+      - name: Test
+        run: npm run test
+      - name: Build
+        run: npm run build

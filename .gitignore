@@ -15,3 +15,5 @@ dist/
 htmlcov/
 .claude/settings.local.json
 .claude/scheduled_tasks.lock
+.vscode/settings.json
+docs/superpowers/HANDOFF.md
