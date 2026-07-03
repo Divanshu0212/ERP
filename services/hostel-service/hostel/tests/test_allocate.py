@@ -160,3 +160,22 @@ def test_warden_cannot_allocate_room_from_a_different_tenant():
     assert room.occupied_count == 0
     assert Allocation.all_objects.filter(room=room).count() == 0
     assert OutboxEvent.objects.count() == 0
+
+
+def test_available_rooms_lists_only_rooms_with_capacity_tenant_scoped():
+    """GET /rooms/available filters at the DB level: full rooms and other
+    tenants' rooms are excluded."""
+    tenant_id = uuid.uuid4()
+    other_tenant = uuid.uuid4()
+
+    open_room = _make_room(tenant_id, capacity=2, occupied_count=1, room_no="201")
+    _make_room(tenant_id, capacity=2, occupied_count=2, room_no="202")  # full -> excluded
+    _make_room(other_tenant, capacity=2, occupied_count=0, room_no="203")  # other tenant
+
+    client = _auth_client(tenant_id, role="student")
+    response = client.get("/api/v1/hostel/rooms/available")
+
+    assert response.status_code == 200
+    results = response.data["data"]["results"]
+    returned_ids = {r["id"] for r in results}
+    assert returned_ids == {str(open_room.id)}

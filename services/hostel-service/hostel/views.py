@@ -16,6 +16,7 @@ serialize on the row lock, so the second one observes the incremented
 """
 
 from django.db import transaction
+from django.db.models import F
 from django.shortcuts import get_object_or_404
 from hostel.models import Allocation, Room
 from hostel.serializers import AllocateRequestSerializer, AllocationSerializer, RoomSerializer
@@ -35,7 +36,10 @@ class AvailableRoomsView(ListAPIView):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        return [room for room in Room.objects.all().order_by("room_no") if room.is_available]
+        # Filter in the DB (not Python) so this scales — ``is_available`` is a
+        # computed property, but its condition maps directly to a queryset
+        # filter, keeping pagination's LIMIT/OFFSET push-down intact.
+        return Room.objects.filter(occupied_count__lt=F("capacity")).order_by("room_no")
 
 
 class AllocationListView(ListAPIView):
