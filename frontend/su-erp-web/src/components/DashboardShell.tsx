@@ -3,12 +3,27 @@
 import { useAuthGuard } from "@/lib/useAuthGuard";
 import { LogoutButton } from "@/components/LogoutButton";
 
+import type { ReactNode } from "react";
+
+import type { TokenClaims } from "@/lib/auth";
+
 /**
- * Stub dashboard shell: guards the route (redirect to /login when
- * unauthenticated or wrong role), then renders a heading + logout button.
- * Real dashboard content lands in Task 10.3.
+ * Dashboard shell: guards the route (redirect to /login when unauthenticated or
+ * wrong role), renders a heading + logout button, then renders `children`.
+ *
+ * When `children` is a function it receives the decoded token claims so pages
+ * can key data fetches off `claims.sub` / `claims.tenant`. With no children the
+ * shell shows a "Signed in as …" placeholder.
  */
-export function DashboardShell({ title, role }: { title: string; role: string }) {
+export function DashboardShell({
+  title,
+  role,
+  children,
+}: {
+  title: string;
+  role: string;
+  children?: ReactNode | ((claims: TokenClaims) => ReactNode);
+}) {
   const { ready, claims } = useAuthGuard(role);
 
   if (!ready) {
@@ -18,6 +33,13 @@ export function DashboardShell({ title, role }: { title: string; role: string })
       </main>
     );
   }
+
+  const body =
+    typeof children === "function"
+      ? claims
+        ? children(claims)
+        : null
+      : children ?? <p>Signed in as {claims?.sub ?? "unknown"}.</p>;
 
   return (
     <main className="min-h-screen bg-gray-50 dark:bg-black">
@@ -30,9 +52,7 @@ export function DashboardShell({ title, role }: { title: string; role: string })
           <LogoutButton />
         </div>
       </header>
-      <section className="p-6 text-gray-700 dark:text-gray-300">
-        <p>Signed in as {claims?.sub ?? "unknown"}.</p>
-      </section>
+      <section className="space-y-8 p-6 text-gray-700 dark:text-gray-300">{body}</section>
     </main>
   );
 }
