@@ -16,5 +16,7 @@ export default defineConfig({
     globals: true,
     setupFiles: ["./vitest.setup.ts"],
     include: ["src/**/*.test.ts", "src/**/*.test.tsx"],
+    // Worker threads segfault under Node 22+ with jsdom; forks are stable.
+    pool: "forks",
   },
 });
