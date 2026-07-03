@@ -3,7 +3,7 @@
 # postgres:16's docker-entrypoint-initdb.d runs this automatically (executable .sh files).
 set -euo pipefail
 
-SERVICE_DATABASES="auth hostel finance transport grievance notification"
+SERVICE_DATABASES="auth hostel finance transport grievance notification student attendance exam library canteen placement analytics"
 
 for db in $SERVICE_DATABASES; do
 	echo "Creating database '${db}' (owner: ${POSTGRES_USER})..."

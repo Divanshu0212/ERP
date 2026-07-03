@@ -1,0 +1,10 @@
+django>=5,<6
+djangorestframework
+django-environ
+dj-database-url
+psycopg[binary]
+-e ../../shared/libs/suerp_common
+
+# Test tooling
+pytest
+pytest-django
