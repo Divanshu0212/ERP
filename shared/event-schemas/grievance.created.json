@@ -1,0 +1,25 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://suerp/event-schemas/grievance.created.json",
+  "title": "grievance.created",
+  "description": "Emitted by grievance-service when a student raises a ticket. ai-service scores the free text and echoes raised_by back in grievance.scored.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["event_id", "type", "tenant_id", "occurred_at", "payload"],
+  "properties": {
+    "event_id": { "type": "string", "format": "uuid" },
+    "type": { "const": "grievance.created" },
+    "tenant_id": { "type": "string" },
+    "occurred_at": { "type": "string", "format": "date-time" },
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ticket_id", "raised_by", "text"],
+      "properties": {
+        "ticket_id": { "type": "string", "format": "uuid" },
+        "raised_by": { "type": "string", "format": "uuid", "description": "User id of the student who raised the ticket." },
+        "text": { "type": "string", "description": "Free-text grievance description scored by ai-service." }
+      }
+    }
+  }
+}
