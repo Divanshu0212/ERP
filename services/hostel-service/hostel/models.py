@@ -91,6 +91,49 @@ class Allocation(TenantModel):
         return f"Allocation {self.id} ({self.status})"
 
 
+class PaymentOutcome(TenantModel):
+    """Records the OUTCOME of a finance payment event, keyed by ``invoice_id``.
+
+    Exists to make the allocation saga's correlation ORDER-INDEPENDENT.
+    ``finance.invoice.created`` (which stamps ``Allocation.invoice_id``) and
+    ``finance.payment.success``/``finance.payment.failed`` (which carry only
+    ``invoice_id``) come from two independent finance code paths and are
+    delivered async, so they can arrive at hostel out of order. If a payment
+    event lands before its invoice.created has stamped the allocation, the
+    lookup by ``invoice_id`` finds nothing and the outcome would be lost. To
+    avoid that, whichever payment event arrives first persists its outcome
+    here; whichever correlation event lands (``handle_invoice_created``)
+    reconciles by applying any not-yet-``applied`` outcome for that invoice.
+
+    The unique constraint on ``(tenant_id, invoice_id)`` makes a duplicate
+    outcome a no-op at the DB level (one payment result per invoice).
+    """
+
+    class Outcome(models.TextChoices):
+        SUCCESS = "success", "Success"
+        FAILED = "failed", "Failed"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    # Bare UUID: finance-service owns the Invoice row in its own database.
+    invoice_id = models.UUIDField(db_index=True)
+    outcome = models.CharField(max_length=20, choices=Outcome.choices)
+    # True once the outcome has been applied to its Allocation (confirmed or
+    # released). Set False by the deferred path (payment event arrived first)
+    # and flipped True by handle_invoice_created when it reconciles.
+    applied = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant_id", "invoice_id"], name="payment_outcome_tenant_invoice_unique"
+            ),
+        ]
+
+    def __str__(self):
+        return f"PaymentOutcome {self.invoice_id} ({self.outcome}, applied={self.applied})"
+
+
 class LeaveRequest(TenantModel):
     class Status(models.TextChoices):
         PENDING = "pending", "Pending"

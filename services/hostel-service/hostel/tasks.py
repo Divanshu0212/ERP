@@ -25,7 +25,7 @@ from datetime import timedelta
 from celery import shared_task
 from django.db import transaction
 from django.utils import timezone
-from hostel.models import Allocation, Room
+from hostel.models import Allocation, PaymentOutcome, Room
 from suerp_common.outbox import drain_outbox
 
 logger = logging.getLogger(__name__)
@@ -60,6 +60,19 @@ def release_stale_pending_allocations() -> int:
                 allocation = Allocation.all_objects.select_for_update().get(id=allocation_id)
                 if allocation.status != Allocation.Status.PENDING:
                     continue  # already handled (e.g. by a payment event) — skip
+                # Belt-and-suspenders: never release a PAID allocation that is
+                # somehow still pending (e.g. a success PaymentOutcome recorded
+                # but its correlation event hasn't reconciled yet). Releasing a
+                # paid seat would lose the student's confirmation.
+                if (
+                    allocation.invoice_id is not None
+                    and PaymentOutcome.all_objects.filter(
+                        tenant_id=allocation.tenant_id,
+                        invoice_id=allocation.invoice_id,
+                        outcome=PaymentOutcome.Outcome.SUCCESS,
+                    ).exists()
+                ):
+                    continue
                 room = Room.all_objects.select_for_update().get(pk=allocation.room_id)
                 allocation.status = Allocation.Status.RELEASED
                 allocation.save(update_fields=["status"])
