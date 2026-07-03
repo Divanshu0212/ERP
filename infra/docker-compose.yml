@@ -10,6 +10,37 @@ volumes:
   rabbitmq-data:
   grafana-data:
 
+# ---------------------------------------------------------------------------
+# Reusable anchors (DRY) shared by every Django microservice.
+# ---------------------------------------------------------------------------
+
+# Common environment for all 13 Django services. DATABASE_URL is overridden
+# per service (each owns its logical DB via pgbouncer). JWT_SIGNING_KEY is the
+# SAME value everywhere — zero-trust shared HS256 verification key.
+x-django-env: &django-env
+  SECRET_KEY: dev-insecure-secret-key
+  DEBUG: "1"
+  ALLOWED_HOSTS: "*"
+  JWT_SIGNING_KEY: dev-insecure-shared-jwt-key
+  READ_DATABASE_URL: ""
+  REDIS_URL: redis://redis:6379/0
+  RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
+
+# Common service template for all Django containers (web/celery/consumer).
+x-django-svc: &django-svc
+  restart: unless-stopped
+  networks:
+    - suerp-net
+  depends_on:
+    postgres:
+      condition: service_healthy
+    pgbouncer:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+    rabbitmq:
+      condition: service_healthy
+
 services:
   postgres:
     image: postgres:16
@@ -136,9 +167,313 @@ services:
       - "8080:8080"
     networks:
       - suerp-net
+    depends_on:
+      auth-service:
+        condition: service_started
+      finance-service:
+        condition: service_started
+      hostel-service:
+        condition: service_started
+      transport-service:
+        condition: service_started
+      grievance-service:
+        condition: service_started
+      notification-service:
+        condition: service_started
+      ai-service:
+        condition: service_started
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/health || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 5s
+
+  # =========================================================================
+  # Django microservices — web (gunicorn). Each migrates then serves on 8000.
+  # Services with celery/consumer workers anchor their build + environment so
+  # the worker containers reuse them verbatim.
+  # =========================================================================
+
+  auth-service:
+    <<: *django-svc
+    container_name: auth-service
+    build: &auth-build
+      context: ..
+      dockerfile: services/auth-service/Dockerfile
+    environment: &auth-env
+      <<: *django-env
+      DATABASE_URL: postgres://suerp:suerp@pgbouncer:6432/auth
+    command: &web-command sh -c "python manage.py migrate --noinput && gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 3"
+
+  finance-service:
+    <<: *django-svc
+    container_name: finance-service
+    build: &finance-build
+      context: ..
+      dockerfile: services/finance-service/Dockerfile
+    environment: &finance-env
+      <<: *django-env
+      DATABASE_URL: postgres://suerp:suerp@pgbouncer:6432/finance
+    command: *web-command
+
+  grievance-service:
+    <<: *django-svc
+    container_name: grievance-service
+    build: &grievance-build
+      context: ..
+      dockerfile: services/grievance-service/Dockerfile
+    environment: &grievance-env
+      <<: *django-env
+      DATABASE_URL: postgres://suerp:suerp@pgbouncer:6432/grievance
+    command: *web-command
+
+  hostel-service:
+    <<: *django-svc
+    container_name: hostel-service
+    build: &hostel-build
+      context: ..
+      dockerfile: services/hostel-service/Dockerfile
+    environment: &hostel-env
+      <<: *django-env
+      DATABASE_URL: postgres://suerp:suerp@pgbouncer:6432/hostel
+    command: *web-command
+
+  notification-service:
+    <<: *django-svc
+    container_name: notification-service
+    build: &notification-build
+      context: ..
+      dockerfile: services/notification-service/Dockerfile
+    environment: &notification-env
+      <<: *django-env
+      DATABASE_URL: postgres://suerp:suerp@pgbouncer:6432/notification
+    command: *web-command
+
+  transport-service:
+    <<: *django-svc
+    container_name: transport-service
+    build: &transport-build
+      context: ..
+      dockerfile: services/transport-service/Dockerfile
+    environment: &transport-env
+      <<: *django-env
+      DATABASE_URL: postgres://suerp:suerp@pgbouncer:6432/transport
+    command: *web-command
+
+  student-service:
+    <<: *django-svc
+    container_name: student-service
+    build:
+      context: ..
+      dockerfile: services/student-service/Dockerfile
+    environment:
+      <<: *django-env
+      DATABASE_URL: postgres://suerp:suerp@pgbouncer:6432/student
+    command: *web-command
+
+  attendance-service:
+    <<: *django-svc
+    container_name: attendance-service
+    build:
+      context: ..
+      dockerfile: services/attendance-service/Dockerfile
+    environment:
+      <<: *django-env
+      DATABASE_URL: postgres://suerp:suerp@pgbouncer:6432/attendance
+    command: *web-command
+
+  exam-service:
+    <<: *django-svc
+    container_name: exam-service
+    build:
+      context: ..
+      dockerfile: services/exam-service/Dockerfile
+    environment:
+      <<: *django-env
+      DATABASE_URL: postgres://suerp:suerp@pgbouncer:6432/exam
+    command: *web-command
+
+  library-service:
+    <<: *django-svc
+    container_name: library-service
+    build:
+      context: ..
+      dockerfile: services/library-service/Dockerfile
+    environment:
+      <<: *django-env
+      DATABASE_URL: postgres://suerp:suerp@pgbouncer:6432/library
+    command: *web-command
+
+  canteen-service:
+    <<: *django-svc
+    container_name: canteen-service
+    build:
+      context: ..
+      dockerfile: services/canteen-service/Dockerfile
+    environment:
+      <<: *django-env
+      DATABASE_URL: postgres://suerp:suerp@pgbouncer:6432/canteen
+    command: *web-command
+
+  placement-service:
+    <<: *django-svc
+    container_name: placement-service
+    build:
+      context: ..
+      dockerfile: services/placement-service/Dockerfile
+    environment:
+      <<: *django-env
+      DATABASE_URL: postgres://suerp:suerp@pgbouncer:6432/placement
+    command: *web-command
+
+  analytics-service:
+    <<: *django-svc
+    container_name: analytics-service
+    build:
+      context: ..
+      dockerfile: services/analytics-service/Dockerfile
+    environment:
+      <<: *django-env
+      DATABASE_URL: postgres://suerp:suerp@pgbouncer:6432/analytics
+    command: *web-command
+
+  # =========================================================================
+  # Celery workers (combined worker + beat) — drain the transactional outbox.
+  # =========================================================================
+
+  auth-celery:
+    <<: *django-svc
+    container_name: auth-celery
+    build: *auth-build
+    environment: *auth-env
+    command: celery -A config worker -B -l info
+
+  finance-celery:
+    <<: *django-svc
+    container_name: finance-celery
+    build: *finance-build
+    environment: *finance-env
+    command: celery -A config worker -B -l info
+
+  grievance-celery:
+    <<: *django-svc
+    container_name: grievance-celery
+    build: *grievance-build
+    environment: *grievance-env
+    command: celery -A config worker -B -l info
+
+  hostel-celery:
+    <<: *django-svc
+    container_name: hostel-celery
+    build: *hostel-build
+    environment: *hostel-env
+    command: celery -A config worker -B -l info
+
+  notification-celery:
+    <<: *django-svc
+    container_name: notification-celery
+    build: *notification-build
+    environment: *notification-env
+    command: celery -A config worker -B -l info
+
+  transport-celery:
+    <<: *django-svc
+    container_name: transport-celery
+    build: *transport-build
+    environment: *transport-env
+    command: celery -A config worker -B -l info
+
+  # =========================================================================
+  # Event consumers (manage.py consume_events) — process inbound domain events.
+  # =========================================================================
+
+  finance-consumer:
+    <<: *django-svc
+    container_name: finance-consumer
+    build: *finance-build
+    environment: *finance-env
+    command: python manage.py consume_events
+
+  grievance-consumer:
+    <<: *django-svc
+    container_name: grievance-consumer
+    build: *grievance-build
+    environment: *grievance-env
+    command: python manage.py consume_events
+
+  hostel-consumer:
+    <<: *django-svc
+    container_name: hostel-consumer
+    build: *hostel-build
+    environment: *hostel-env
+    command: python manage.py consume_events
+
+  notification-consumer:
+    <<: *django-svc
+    container_name: notification-consumer
+    build: *notification-build
+    environment: *notification-env
+    command: python manage.py consume_events
+
+  transport-consumer:
+    <<: *django-svc
+    container_name: transport-consumer
+    build: *transport-build
+    environment: *transport-env
+    command: python manage.py consume_events
+
+  # =========================================================================
+  # ai-service (FastAPI). NOTE: gateway routes AI traffic to :8001, so the
+  # Dockerfile's default :8000 CMD is overridden here.
+  # =========================================================================
+
+  ai-service:
+    container_name: ai-service
+    restart: unless-stopped
+    build: &ai-build
+      context: ../services/ai-service
+      dockerfile: Dockerfile
+    environment: &ai-env
+      JWT_SIGNING_KEY: dev-insecure-shared-jwt-key
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
+      GATEWAY_URL: http://gateway:8080
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8001
+    networks:
+      - suerp-net
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+
+  ai-consumer:
+    container_name: ai-consumer
+    restart: unless-stopped
+    build: *ai-build
+    environment: *ai-env
+    command: python -m app.consumer
+    networks:
+      - suerp-net
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+
+  # =========================================================================
+  # Frontend (Next.js). Browser reaches the gateway on the host at :8080.
+  # =========================================================================
+
+  frontend:
+    container_name: suerp-frontend
+    restart: unless-stopped
+    build:
+      context: ../frontend/su-erp-web
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_GATEWAY_URL: http://localhost:8080
+    environment:
+      NEXT_PUBLIC_GATEWAY_URL: http://localhost:8080
+    ports:
+      - "3001:3000"
+    networks:
+      - suerp-net
+    depends_on:
+      - gateway
