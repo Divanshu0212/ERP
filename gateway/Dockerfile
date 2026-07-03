@@ -6,8 +6,10 @@ FROM nginx:1.27-alpine
 RUN rm -f /etc/nginx/conf.d/default.conf
 COPY nginx.conf /etc/nginx/nginx.conf
 
-# Validate the config at build time so a broken config fails the build.
-RUN nginx -t
+# NOTE: `nginx -t` is intentionally NOT run at build time — it resolves the
+# upstream hostnames (auth-service, etc.) via DNS, which do not exist during
+# an isolated image build and would fail the build. nginx still parses and
+# resolves upstreams when the container starts on the shared suerp-net network.
 
 EXPOSE 8080
 
