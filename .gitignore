@@ -13,3 +13,5 @@ dist/
 *.egg-info/
 .coverage
 htmlcov/
+.claude/settings.local.json
+.claude/scheduled_tasks.lock
