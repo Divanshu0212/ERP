@@ -282,7 +282,9 @@ class UserByEmailView(APIView):
         except User.DoesNotExist:
             return fail(f"No user found with email {email}.", status=404)
 
-        return ok(UserByEmailSerializer({"id": user.id, "email": user.email, "role": user.role}).data)
+        return ok(
+            UserByEmailSerializer({"id": user.id, "email": user.email, "role": user.role}).data
+        )
 
 
 PLATFORM_SLUG = "platform"
