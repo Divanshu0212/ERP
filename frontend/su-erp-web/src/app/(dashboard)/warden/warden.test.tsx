@@ -82,20 +82,28 @@ describe("WardenDashboard", () => {
   });
 
   it("creates a hostel allocation", async () => {
-    get.mockResolvedValue({ items: [], total: 0 });
+    get.mockImplementation((path: string) => {
+      if (path.includes("/hostel/rooms/available")) {
+        return Promise.resolve({
+          items: [{ id: "rm-1", block_name: "Block A", room_no: "101", capacity: 2, occupied_count: 0 }],
+          total: 1,
+        });
+      }
+      return Promise.resolve({ items: [], total: 0 });
+    });
     post.mockResolvedValue({ id: "a-2", status: "pending", room_id: "rm-1", student_id: "stu-1" });
 
     render(<WardenDashboard />);
     await screen.findByText("No pending allocations.");
 
-    fireEvent.change(screen.getByLabelText("Room ID"), { target: { value: "rm-1" } });
-    fireEvent.change(screen.getByLabelText("Student ID"), { target: { value: "stu-1" } });
+    fireEvent.change(screen.getByLabelText("Room"), { target: { value: "rm-1" } });
+    fireEvent.change(screen.getByLabelText("Student email"), { target: { value: "student@example.com" } });
     fireEvent.click(screen.getByRole("button", { name: "Create allocation" }));
 
     await waitFor(() =>
       expect(post).toHaveBeenCalledWith("/api/v1/hostel/allocate", {
         room_id: "rm-1",
-        student_id: "stu-1",
+        student_email: "student@example.com",
       }),
     );
     expect(await screen.findByText("Allocation created.")).toBeInTheDocument();
