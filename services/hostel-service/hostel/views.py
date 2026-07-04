@@ -16,6 +16,7 @@ serialize on the row lock, so the second one observes the incremented
 """
 
 from django.db.models import F
+from hostel.lookups import LookupFailed, resolve_user_by_email
 from hostel.models import Allocation, Room
 from hostel.serializers import AllocateRequestSerializer, AllocationSerializer, RoomSerializer
 from hostel.services import RoomFullError, create_allocation
@@ -59,10 +60,15 @@ class AllocateView(APIView):
             return fail("Invalid allocation request.", errors=serializer.errors, status=400)
 
         room_id = serializer.validated_data["room_id"]
-        student_id = serializer.validated_data["student_id"]
+        student_email = serializer.validated_data["student_email"]
 
         try:
-            allocation = create_allocation(room_id, student_id, get_current_tenant())
+            student = resolve_user_by_email(student_email, request.META.get("HTTP_AUTHORIZATION"))
+        except LookupFailed as exc:
+            return fail(str(exc), status=400 if exc.reason == "not_found" else 502)
+
+        try:
+            allocation = create_allocation(room_id, student["id"], get_current_tenant())
         except RoomFullError:
             return fail("Room at full capacity.", status=400)
 
