@@ -12,8 +12,7 @@ from unittest.mock import patch
 
 import openpyxl
 import pytest
-from hostel.models import Allocation, AllocationImportBatch, AllocationImportRow, Room
-from rest_framework.test import APIClient
+from hostel.models import Allocation, AllocationImportBatch
 
 pytestmark = pytest.mark.django_db
 
@@ -50,7 +49,11 @@ def test_all_rows_succeed_csv(mock_resolve):
     tenant_id = uuid.uuid4()
     room1 = _make_room(tenant_id, capacity=2, occupied_count=0, room_no="101")
     room2 = _make_room(tenant_id, capacity=2, occupied_count=0, room_no="102")
-    mock_resolve.side_effect = lambda email, auth: {"id": str(uuid.uuid4()), "email": email, "role": "student"}
+    mock_resolve.side_effect = lambda email, auth: {
+        "id": str(uuid.uuid4()),
+        "email": email,
+        "role": "student",
+    }
     client = _auth_client(tenant_id, role="warden")
 
     buf, name = _csv_file([(str(room1.id), "a@example.com"), (str(room2.id), "b@example.com")])
@@ -72,7 +75,11 @@ def test_all_rows_succeed_csv(mock_resolve):
 def test_all_rows_succeed_xlsx(mock_resolve):
     tenant_id = uuid.uuid4()
     room = _make_room(tenant_id, capacity=2, occupied_count=0)
-    mock_resolve.return_value = {"id": str(uuid.uuid4()), "email": "a@example.com", "role": "student"}
+    mock_resolve.return_value = {
+        "id": str(uuid.uuid4()),
+        "email": "a@example.com",
+        "role": "student",
+    }
     client = _auth_client(tenant_id, role="warden")
 
     buf, name = _xlsx_file([(str(room.id), "a@example.com")])
