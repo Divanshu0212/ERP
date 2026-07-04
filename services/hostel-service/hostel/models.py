@@ -169,3 +169,53 @@ class Complaint(TenantModel):
 
     def __str__(self):
         return f"Complaint {self.id} ({self.status})"
+
+
+class AllocationImportBatch(TenantModel):
+    """One warden-initiated bulk-allocation upload (CSV or XLSX).
+
+    ``success_count``/``fail_count`` are denormalized onto the batch (rather
+    than always aggregating ``rows``) so the Import Logs list view can show
+    them without an extra query per batch.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    # Reference to auth-service's User table (the warden/admin who uploaded).
+    # Bare UUID — no cross-service FK (DB-per-service).
+    uploaded_by = models.UUIDField()
+    filename = models.CharField(max_length=255)
+    total_rows = models.PositiveIntegerField(default=0)
+    success_count = models.PositiveIntegerField(default=0)
+    fail_count = models.PositiveIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"ImportBatch {self.id} ({self.filename})"
+
+
+class AllocationImportRow(TenantModel):
+    """One row's outcome within an AllocationImportBatch."""
+
+    class Status(models.TextChoices):
+        SUCCESS = "success", "Success"
+        FAILED = "failed", "Failed"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    batch = models.ForeignKey(AllocationImportBatch, on_delete=models.CASCADE, related_name="rows")
+    row_number = models.PositiveIntegerField()
+    room_id_raw = models.CharField(max_length=255)
+    student_email_raw = models.CharField(max_length=255)
+    status = models.CharField(max_length=20, choices=Status.choices)
+    error_message = models.CharField(max_length=500, blank=True, default="")
+    allocation = models.ForeignKey(
+        Allocation, on_delete=models.SET_NULL, null=True, blank=True, related_name="import_rows"
+    )
+
+    class Meta:
+        ordering = ["row_number"]
+
+    def __str__(self):
+        return f"ImportRow {self.row_number} of batch {self.batch_id} ({self.status})"
