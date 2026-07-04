@@ -7,6 +7,11 @@ import { DataPanel } from "@/components/DataPanel";
 import { api, ApiError } from "@/lib/api";
 import { listItems } from "@/lib/paginate";
 import { usePoll } from "@/lib/usePoll";
+import { cn } from "@/lib/cn";
+import { Card, CardBody } from "@/components/ui/Card";
+import { Button } from "@/components/ui/Button";
+import { StatusPill } from "@/components/ui/StatusPill";
+import { Table, TBody, TD, TH, THead, HeaderRow, Row } from "@/components/ui/Table";
 
 // Saga demo: hostel allocation <-> finance.
 //
@@ -37,18 +42,8 @@ function isConfirmed(status: string): boolean {
   return ["confirmed", "allocated", "active"].includes((status || "").toLowerCase());
 }
 
-function StatusBadge({ status }: { status: string }) {
-  const confirmed = isConfirmed(status);
-  const cls = confirmed
-    ? "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300"
-    : "bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300";
-  return (
-    <span
-      className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-medium capitalize ${cls}`}
-    >
-      {confirmed ? "Confirmed" : "Pending"}
-    </span>
-  );
+function AllocationStatus({ status }: { status: string }) {
+  return <StatusPill status={isConfirmed(status) ? "Confirmed" : "Pending"} />;
 }
 
 function SagaDemoContent() {
@@ -56,15 +51,11 @@ function SagaDemoContent() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // The allocation currently being paid/confirmed.
   const [activeId, setActiveId] = useState<string | null>(null);
   const [payError, setPayError] = useState<string | null>(null);
 
   const poll = usePoll<Allocation>({
-    fetcher: async () => {
-      const data = await api.get<Allocation>(`/api/v1/hostel/allocations/${activeId}`);
-      return data;
-    },
+    fetcher: async () => api.get<Allocation>(`/api/v1/hostel/allocations/${activeId}`),
     isDone: (a) => isConfirmed(a.status),
     intervalMs: 2000,
     timeoutMs: 10000,
@@ -103,7 +94,6 @@ function SagaDemoContent() {
           invoice_id: target?.id,
           allocation_id: alloc.id,
         });
-        // Kick off polling — the fetcher reads activeId, already set above.
         poll.start();
       } catch (e) {
         setPayError(errMsg(e));
@@ -112,7 +102,6 @@ function SagaDemoContent() {
     [poll],
   );
 
-  // When the saga confirms, refresh the pending list (the allocation drops off).
   useEffect(() => {
     if (poll.status === "done") {
       void loadAllocations();
@@ -131,92 +120,88 @@ function SagaDemoContent() {
             : null;
 
   return (
-    <>
-      <div className="rounded-lg border border-gray-200 bg-white p-4 text-sm text-gray-600 shadow-sm dark:border-gray-800 dark:bg-gray-950 dark:text-gray-400">
-        Pay a hostel fee and watch the allocation saga flip the booking from
-        <span className="mx-1 font-medium text-orange-600 dark:text-orange-400">pending</span>
-        to
-        <span className="mx-1 font-medium text-green-600 dark:text-green-400">confirmed</span>
-        once the payment settles.
-      </div>
+    <div className="space-y-6">
+      <Card>
+        <CardBody className="text-[13px] text-muted">
+          Pay a hostel fee and watch the allocation saga flip the booking from{" "}
+          <span className="font-medium text-warn">pending</span> to{" "}
+          <span className="font-medium text-success">confirmed</span> once the payment
+          settles.
+        </CardBody>
+      </Card>
 
       <DataPanel
-        title="Pending Allocations"
+        title="Pending allocations"
         loading={loading}
         error={error}
         isEmpty={allocations.length === 0}
         emptyLabel="No pending allocations."
       >
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm">
-            <thead>
-              <tr className="border-b border-gray-200 text-gray-500 dark:border-gray-800 dark:text-gray-400">
-                <th className="py-2 pr-4 font-medium">Allocation</th>
-                <th className="py-2 pr-4 font-medium">Room</th>
-                <th className="py-2 pr-4 font-medium">Status</th>
-                <th className="py-2 font-medium">Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {allocations.map((a) => {
-                const active = a.id === activeId;
-                const shownStatus =
-                  active && poll.data ? poll.data.status : a.status;
-                const busy = active && poll.status === "polling";
-                return (
-                  <tr
-                    key={a.id}
-                    className="border-b border-gray-100 last:border-0 dark:border-gray-900"
-                  >
-                    <td className="py-2 pr-4 font-mono text-xs">{a.id}</td>
-                    <td className="py-2 pr-4">{a.room}</td>
-                    <td className="py-2 pr-4">
-                      <StatusBadge status={shownStatus} />
-                    </td>
-                    <td className="py-2">
-                      <button
-                        type="button"
-                        disabled={busy || isConfirmed(shownStatus)}
-                        onClick={() => void payAndConfirm(a)}
-                        className="rounded-md bg-blue-600 px-3 py-1 text-xs font-medium text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-gray-300 disabled:text-gray-500 dark:disabled:bg-gray-800 dark:disabled:text-gray-500"
-                      >
-                        {busy ? "Confirming…" : "Pay & Confirm"}
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+        <Table>
+          <THead>
+            <HeaderRow>
+              <TH>Allocation</TH>
+              <TH>Room</TH>
+              <TH>Status</TH>
+              <TH className="text-right">Action</TH>
+            </HeaderRow>
+          </THead>
+          <TBody>
+            {allocations.map((a) => {
+              const active = a.id === activeId;
+              const shownStatus = active && poll.data ? poll.data.status : a.status;
+              const busy = active && poll.status === "polling";
+              return (
+                <Row key={a.id}>
+                  <TD className="font-mono text-[12px]">{a.id}</TD>
+                  <TD className="font-medium">{a.room}</TD>
+                  <TD>
+                    <AllocationStatus status={shownStatus} />
+                  </TD>
+                  <TD className="text-right">
+                    <Button
+                      size="sm"
+                      loading={busy}
+                      disabled={busy || isConfirmed(shownStatus)}
+                      onClick={() => void payAndConfirm(a)}
+                    >
+                      {busy ? "Confirming…" : "Pay & Confirm"}
+                    </Button>
+                  </TD>
+                </Row>
+              );
+            })}
+          </TBody>
+        </Table>
 
         {pollingLabel && (
           <p
             role="status"
-            className={`mt-3 text-sm ${
+            className={cn(
+              "mt-3 text-[13px]",
               poll.status === "done"
-                ? "text-green-600 dark:text-green-400"
+                ? "text-success"
                 : poll.status === "timeout" || poll.status === "error"
-                  ? "text-red-600 dark:text-red-400"
-                  : "text-gray-500 dark:text-gray-400"
-            }`}
+                  ? "text-danger"
+                  : "text-muted",
+            )}
           >
             {pollingLabel}
           </p>
         )}
         {payError && (
-          <p role="alert" className="mt-2 text-sm text-red-600 dark:text-red-400">
+          <p role="alert" className="mt-2 text-[13px] text-danger">
             {payError}
           </p>
         )}
       </DataPanel>
-    </>
+    </div>
   );
 }
 
 export default function SagaDemoPage() {
   return (
-    <DashboardShell title="Saga Demo · Hostel Payment" role="student">
+    <DashboardShell title="Pay & confirm" role="student">
       <SagaDemoContent />
     </DashboardShell>
   );
