@@ -6,6 +6,7 @@ import { DashboardShell } from "@/components/DashboardShell";
 import { DataPanel } from "@/components/DataPanel";
 import { api, ApiError } from "@/lib/api";
 import { listItems } from "@/lib/paginate";
+import { openRazorpayCheckout, toPaise } from "@/lib/razorpay";
 import { Card, CardBody, CardHeader } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
@@ -36,6 +37,13 @@ interface Order {
   total: string;
   items: OrderItem[];
   created_at: string;
+}
+
+interface CheckoutOrder {
+  order_id: string;
+  amount: number | string;
+  currency: string;
+  key_id: string;
 }
 
 function errMsg(e: unknown): string {
@@ -104,15 +112,57 @@ function CanteenContent() {
     setPlacing(true);
     setPlaceError(null);
     setPlaceOk(null);
-    try {
-      const items = cartEntries.map(([menu_item_id, quantity]) => ({ menu_item_id, quantity }));
-      await api.post("/api/v1/orders/", { items });
+    const items = cartEntries.map(([menu_item_id, quantity]) => ({ menu_item_id, quantity }));
+
+    // Create the order in the checkout endpoint (returns a Razorpay order plus
+    // key_id). Post the confirmed order back once payment succeeds.
+    const createOrder = async (razorpay?: {
+      razorpay_order_id: string;
+      razorpay_payment_id: string;
+      razorpay_signature: string;
+    }) => {
+      await api.post("/api/v1/orders/", { items, ...(razorpay ?? {}) });
       setPlaceOk("Order placed.");
       setCart({});
       await loadOrders();
+    };
+
+    try {
+      const checkout = await api.post<CheckoutOrder>("/api/v1/orders/checkout", { items });
+
+      // Dev/simulated mode: no real key_id — skip the widget, place directly.
+      if (!checkout.key_id) {
+        await createOrder();
+        setPlacing(false);
+        return;
+      }
+
+      await openRazorpayCheckout({
+        keyId: checkout.key_id,
+        orderId: checkout.order_id,
+        amountPaise: toPaise(checkout.amount),
+        currency: checkout.currency,
+        name: "SU-ERP",
+        description: "Canteen order",
+        onSuccess: (res) => {
+          void (async () => {
+            try {
+              await createOrder(res);
+            } catch (payErr) {
+              setPlaceError(errMsg(payErr));
+            } finally {
+              setPlacing(false);
+            }
+          })();
+        },
+        onDismiss: () => setPlacing(false),
+        onError: (msg) => {
+          setPlaceError(msg);
+          setPlacing(false);
+        },
+      });
     } catch (e) {
       setPlaceError(errMsg(e));
-    } finally {
       setPlacing(false);
     }
   }

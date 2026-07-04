@@ -6,10 +6,19 @@ import { DashboardShell } from "@/components/DashboardShell";
 import { DataPanel } from "@/components/DataPanel";
 import { api, ApiError } from "@/lib/api";
 import { listItems } from "@/lib/paginate";
+import { openRazorpayCheckout, toPaise } from "@/lib/razorpay";
 import { Card, CardBody, CardHeader } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
+import { Alert } from "@/components/ui/Alert";
 import { StatusPill } from "@/components/ui/StatusPill";
 import { Table, TBody, TD, TH, THead, HeaderRow, Row } from "@/components/ui/Table";
+
+interface RazorpayOrder {
+  order_id: string;
+  amount: number | string;
+  currency: string;
+  key_id: string;
+}
 
 interface Invoice {
   id: string;
@@ -44,6 +53,12 @@ function isPaid(status: string): boolean {
   return ["paid", "completed", "settled"].includes((status || "").toLowerCase());
 }
 
+function newIdempotencyKey(): string {
+  return typeof crypto !== "undefined" && crypto.randomUUID
+    ? crypto.randomUUID()
+    : `idem-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
 function StudentContent() {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [invoicesLoading, setInvoicesLoading] = useState(true);
@@ -52,6 +67,10 @@ function StudentContent() {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [notifLoading, setNotifLoading] = useState(true);
   const [notifError, setNotifError] = useState<string | null>(null);
+
+  const [payingId, setPayingId] = useState<string | null>(null);
+  const [payError, setPayError] = useState<string | null>(null);
+  const [payOk, setPayOk] = useState<string | null>(null);
 
   const loadInvoices = useCallback(async () => {
     setInvoicesLoading(true);
@@ -84,6 +103,81 @@ function StudentContent() {
     void loadNotifications();
   }, [loadInvoices, loadNotifications]);
 
+  const settlePayment = useCallback(
+    async (invoiceId: string, idempotencyKey: string, razorpay?: {
+      razorpay_order_id: string;
+      razorpay_payment_id: string;
+      razorpay_signature: string;
+    }) => {
+      await api.post("/api/v1/finance/pay", {
+        invoice_id: invoiceId,
+        idempotency_key: idempotencyKey,
+        ...(razorpay ?? {}),
+      });
+      setPayOk("Payment successful.");
+      await loadInvoices();
+    },
+    [loadInvoices],
+  );
+
+  const payInvoice = useCallback(
+    async (inv: Invoice) => {
+      setPayError(null);
+      setPayOk(null);
+      setPayingId(inv.id);
+      const idempotencyKey = newIdempotencyKey();
+
+      let order: RazorpayOrder;
+      try {
+        order = await api.post<RazorpayOrder>(
+          `/api/v1/finance/invoices/${inv.id}/razorpay-order`,
+        );
+      } catch (e) {
+        // Razorpay not configured server-side (400) — fall back to the old
+        // simulated direct-pay flow so local/demo environments keep working.
+        if (e instanceof ApiError && e.status === 400) {
+          try {
+            await settlePayment(inv.id, idempotencyKey);
+          } catch (payErr) {
+            setPayError(errMsg(payErr));
+          } finally {
+            setPayingId(null);
+          }
+          return;
+        }
+        setPayError(errMsg(e));
+        setPayingId(null);
+        return;
+      }
+
+      await openRazorpayCheckout({
+        keyId: order.key_id,
+        orderId: order.order_id,
+        amountPaise: toPaise(order.amount),
+        currency: order.currency,
+        name: "SU-ERP",
+        description: inv.purpose,
+        onSuccess: (res) => {
+          void (async () => {
+            try {
+              await settlePayment(inv.id, idempotencyKey, res);
+            } catch (payErr) {
+              setPayError(errMsg(payErr));
+            } finally {
+              setPayingId(null);
+            }
+          })();
+        },
+        onDismiss: () => setPayingId(null),
+        onError: (msg) => {
+          setPayError(msg);
+          setPayingId(null);
+        },
+      });
+    },
+    [settlePayment],
+  );
+
   return (
     <div className="space-y-6">
       <DataPanel
@@ -114,7 +208,9 @@ function StudentContent() {
                   <Button
                     size="sm"
                     variant={isPaid(inv.status) ? "secondary" : "primary"}
-                    disabled={isPaid(inv.status)}
+                    loading={payingId === inv.id}
+                    disabled={isPaid(inv.status) || payingId === inv.id}
+                    onClick={() => void payInvoice(inv)}
                   >
                     {isPaid(inv.status) ? "Paid" : "Pay"}
                   </Button>
@@ -123,6 +219,8 @@ function StudentContent() {
             ))}
           </TBody>
         </Table>
+        {payError && <Alert tone="error" className="mt-4">{payError}</Alert>}
+        {payOk && <Alert tone="success" className="mt-4">{payOk}</Alert>}
       </DataPanel>
 
       <DataPanel

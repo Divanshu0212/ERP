@@ -7,6 +7,7 @@ import { DataPanel } from "@/components/DataPanel";
 import { api, ApiError } from "@/lib/api";
 import { listItems } from "@/lib/paginate";
 import { usePoll } from "@/lib/usePoll";
+import { openRazorpayCheckout, toPaise } from "@/lib/razorpay";
 import { cn } from "@/lib/cn";
 import { Card, CardBody } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -33,9 +34,22 @@ interface Invoice {
   status: string;
 }
 
+interface RazorpayOrder {
+  order_id: string;
+  amount: number | string;
+  currency: string;
+  key_id: string;
+}
+
 function errMsg(e: unknown): string {
   if (e instanceof ApiError) return e.message;
   return e instanceof Error ? e.message : "Something went wrong.";
+}
+
+function newIdempotencyKey(): string {
+  return typeof crypto !== "undefined" && crypto.randomUUID
+    ? crypto.randomUUID()
+    : `idem-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
 function isConfirmed(status: string): boolean {
@@ -82,19 +96,67 @@ function SagaDemoContent() {
     async (alloc: Allocation) => {
       setPayError(null);
       setActiveId(alloc.id);
+      const idempotencyKey = newIdempotencyKey();
+
       try {
-        // Find the invoice for this allocation, then settle it. The saga
-        // reacts to the payment event and confirms the allocation.
+        // Find the invoice for this allocation. The saga reacts to the payment
+        // event and confirms the allocation once it settles.
         const invoice = await api.get<Invoice>(
           `/api/v1/finance/invoices?allocation_id=${alloc.id}`,
         );
         const items = listItems<Invoice>(invoice);
         const target = items[0] ?? (invoice as Invoice);
-        await api.post("/api/v1/finance/pay", {
-          invoice_id: target?.id,
-          allocation_id: alloc.id,
+        const invoiceId = target?.id;
+
+        // Settle the invoice, then begin polling for the saga confirmation.
+        const settle = async (razorpay?: {
+          razorpay_order_id: string;
+          razorpay_payment_id: string;
+          razorpay_signature: string;
+        }) => {
+          await api.post("/api/v1/finance/pay", {
+            invoice_id: invoiceId,
+            idempotency_key: idempotencyKey,
+            allocation_id: alloc.id,
+            ...(razorpay ?? {}),
+          });
+          poll.start();
+        };
+
+        let order: RazorpayOrder;
+        try {
+          order = await api.post<RazorpayOrder>(
+            `/api/v1/finance/invoices/${invoiceId}/razorpay-order`,
+          );
+        } catch (orderErr) {
+          // Razorpay not configured server-side (400) — fall back to the old
+          // simulated direct-pay flow, preserving the polling behavior.
+          if (orderErr instanceof ApiError && orderErr.status === 400) {
+            await settle();
+            return;
+          }
+          throw orderErr;
+        }
+
+        await openRazorpayCheckout({
+          keyId: order.key_id,
+          orderId: order.order_id,
+          amountPaise: toPaise(order.amount),
+          currency: order.currency,
+          name: "SU-ERP",
+          description: `Hostel fee — ${alloc.room}`,
+          onSuccess: (res) => {
+            void (async () => {
+              try {
+                await settle(res);
+              } catch (payErr) {
+                setPayError(errMsg(payErr));
+              }
+            })();
+          },
+          onDismiss: () => setActiveId((id) => (id === alloc.id ? null : id)),
+          onError: (msg) => setPayError(msg),
         });
-        poll.start();
       } catch (e) {
         setPayError(errMsg(e));
       }
