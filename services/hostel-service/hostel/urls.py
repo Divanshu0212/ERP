@@ -21,7 +21,11 @@ urlpatterns = [
     path("rooms", RoomListCreateView.as_view(), name="room-list-create"),
     path("blocks", BlockListCreateView.as_view(), name="block-list-create"),
     path("allocations", AllocationListView.as_view(), name="allocation-list"),
-    path("allocations/import-logs", AllocationImportLogListView.as_view(), name="allocation-import-log-list"),
+    path(
+        "allocations/import-logs",
+        AllocationImportLogListView.as_view(),
+        name="allocation-import-log-list",
+    ),
     path(
         "allocations/import-logs/<uuid:pk>",
         AllocationImportLogDetailView.as_view(),

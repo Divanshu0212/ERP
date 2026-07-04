@@ -19,7 +19,11 @@ from hostel.tests.test_allocate import _auth_client, _make_block  # noqa: E402
 def test_admin_creates_block(mock_resolve):
     tenant_id = uuid.uuid4()
     warden_id = uuid.uuid4()
-    mock_resolve.return_value = {"id": str(warden_id), "email": "warden@example.com", "role": "warden"}
+    mock_resolve.return_value = {
+        "id": str(warden_id),
+        "email": "warden@example.com",
+        "role": "warden",
+    }
     client = _auth_client(tenant_id, role="admin")
 
     response = client.post(
