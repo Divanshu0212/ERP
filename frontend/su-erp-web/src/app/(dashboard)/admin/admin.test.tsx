@@ -58,6 +58,15 @@ function defaultGet(path: string) {
   if (path.includes("/finance/invoices")) return Promise.resolve({ items: [{}], total: 156 });
   if (path.includes("/hostel/allocations")) return Promise.resolve({ items: [{}], total: 30 });
   if (path.includes("/grievance")) return Promise.resolve({ items: [{}], total: 7 });
+  if (path.includes("/hostel/blocks")) {
+    return Promise.resolve({ items: [{ id: "blk-1", name: "Block A", gender_type: "M", warden_id: "w1" }], total: 1 });
+  }
+  if (path.includes("/hostel/rooms")) {
+    return Promise.resolve({
+      items: [{ id: "rm-1", block_name: "Block A", room_no: "101", capacity: 2, occupied_count: 1 }],
+      total: 1,
+    });
+  }
   return Promise.resolve({ items: [], total: 0 });
 }
 
@@ -162,5 +171,58 @@ describe("AdminDashboard", () => {
     ).toBeInTheDocument();
     // No crash: the roster is still on screen.
     expect(screen.getByText("alice@acme.edu")).toBeInTheDocument();
+  });
+
+  it("renders hostel blocks and rooms", async () => {
+    get.mockImplementation(defaultGet);
+
+    render(<AdminDashboard />);
+
+    expect((await screen.findAllByText("Block A"))[0]).toBeInTheDocument();
+    expect(await screen.findByText("101")).toBeInTheDocument();
+  });
+
+  it("creates a block by warden email", async () => {
+    get.mockImplementation(defaultGet);
+    post.mockResolvedValue({ id: "blk-2", name: "Block B", gender_type: "F", warden_id: "w2" });
+
+    render(<AdminDashboard />);
+    await screen.findAllByText("Block A");
+
+    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Block B" } });
+    fireEvent.change(screen.getByLabelText("Gender type"), { target: { value: "F" } });
+    fireEvent.change(screen.getByLabelText("Warden email"), { target: { value: "warden@acme.edu" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create block" }));
+
+    await waitFor(() =>
+      expect(post).toHaveBeenCalledWith("/api/v1/hostel/blocks", {
+        name: "Block B",
+        gender_type: "F",
+        warden_email: "warden@acme.edu",
+      }),
+    );
+    expect(await screen.findByText("Block created.")).toBeInTheDocument();
+  });
+
+  it("creates a room under a block", async () => {
+    get.mockImplementation(defaultGet);
+    post.mockResolvedValue({ id: "rm-2", block_name: "Block A", room_no: "202", capacity: 2, occupied_count: 0 });
+
+    render(<AdminDashboard />);
+    await screen.findAllByText("Block A");
+
+    fireEvent.change(screen.getByLabelText("Block"), { target: { value: "blk-1" } });
+    fireEvent.change(screen.getByLabelText("Room number"), { target: { value: "202" } });
+    fireEvent.change(screen.getByLabelText("Capacity"), { target: { value: "2" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create room" }));
+
+    await waitFor(() =>
+      expect(post).toHaveBeenCalledWith("/api/v1/hostel/rooms", {
+        block_id: "blk-1",
+        room_no: "202",
+        capacity: 2,
+      }),
+    );
+    expect(await screen.findByText("Room created.")).toBeInTheDocument();
   });
 });

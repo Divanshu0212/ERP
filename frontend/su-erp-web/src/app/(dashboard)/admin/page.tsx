@@ -28,6 +28,21 @@ interface User {
   date_joined: string;
 }
 
+interface Block {
+  id: string;
+  name: string;
+  gender_type: string;
+  warden_id: string;
+}
+
+interface HostelRoom {
+  id: string;
+  block_name: string;
+  room_no: string;
+  capacity: number;
+  occupied_count: number;
+}
+
 const ROLES = ["student", "faculty", "warden", "driver", "canteen_owner", "admin", "alumni"] as const;
 type Role = (typeof ROLES)[number];
 
@@ -245,6 +260,8 @@ function AdminContent() {
           </form>
         </CardBody>
       </Card>
+
+      <HostelSetup />
     </div>
   );
 }
@@ -325,6 +342,251 @@ function CreateInvoice({ users, onCreated }: { users: User[]; onCreated: () => v
           {ok && <Alert tone="success">{ok}</Alert>}
           <Button type="submit" loading={pending}>
             Create invoice
+          </Button>
+        </form>
+      </CardBody>
+    </Card>
+  );
+}
+
+function HostelSetup() {
+  const [blocks, setBlocks] = useState<Block[]>([]);
+  const [blocksLoading, setBlocksLoading] = useState(true);
+  const [blocksError, setBlocksError] = useState<string | null>(null);
+
+  const [rooms, setRooms] = useState<HostelRoom[]>([]);
+  const [roomsLoading, setRoomsLoading] = useState(true);
+  const [roomsError, setRoomsError] = useState<string | null>(null);
+
+  const loadBlocks = useCallback(async () => {
+    setBlocksLoading(true);
+    setBlocksError(null);
+    try {
+      const data = await api.get("/api/v1/hostel/blocks");
+      setBlocks(listItems<Block>(data));
+    } catch (e) {
+      setBlocksError(errMsg(e));
+    } finally {
+      setBlocksLoading(false);
+    }
+  }, []);
+
+  const loadRooms = useCallback(async () => {
+    setRoomsLoading(true);
+    setRoomsError(null);
+    try {
+      const data = await api.get("/api/v1/hostel/rooms");
+      setRooms(listItems<HostelRoom>(data));
+    } catch (e) {
+      setRoomsError(errMsg(e));
+    } finally {
+      setRoomsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadBlocks();
+    void loadRooms();
+  }, [loadBlocks, loadRooms]);
+
+  return (
+    <div className="space-y-6">
+      <CreateBlock onCreated={loadBlocks} />
+      <DataPanel
+        title="Blocks"
+        loading={blocksLoading}
+        error={blocksError}
+        isEmpty={blocks.length === 0}
+        emptyLabel="No blocks yet. Add one below."
+      >
+        <Table>
+          <THead>
+            <HeaderRow>
+              <TH>Name</TH>
+              <TH>Gender</TH>
+              <TH>Warden</TH>
+            </HeaderRow>
+          </THead>
+          <TBody>
+            {blocks.map((b) => (
+              <Row key={b.id}>
+                <TD className="font-medium">{b.name}</TD>
+                <TD className="text-muted">{b.gender_type}</TD>
+                <TD className="font-mono text-[12px]">{b.warden_id}</TD>
+              </Row>
+            ))}
+          </TBody>
+        </Table>
+      </DataPanel>
+
+      <CreateRoom blocks={blocks} onCreated={loadRooms} />
+      <DataPanel
+        title="Rooms"
+        loading={roomsLoading}
+        error={roomsError}
+        isEmpty={rooms.length === 0}
+        emptyLabel="No rooms yet. Add one below."
+      >
+        <Table>
+          <THead>
+            <HeaderRow>
+              <TH>Block</TH>
+              <TH>Room no.</TH>
+              <TH>Occupancy</TH>
+            </HeaderRow>
+          </THead>
+          <TBody>
+            {rooms.map((r) => (
+              <Row key={r.id}>
+                <TD className="font-medium">{r.block_name}</TD>
+                <TD>{r.room_no}</TD>
+                <TD className="text-muted">
+                  {r.occupied_count}/{r.capacity}
+                </TD>
+              </Row>
+            ))}
+          </TBody>
+        </Table>
+      </DataPanel>
+    </div>
+  );
+}
+
+function CreateBlock({ onCreated }: { onCreated: () => void }) {
+  const [name, setName] = useState("");
+  const [genderType, setGenderType] = useState<"M" | "F">("M");
+  const [wardenEmail, setWardenEmail] = useState("");
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [ok, setOk] = useState<string | null>(null);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    setPending(true);
+    setError(null);
+    setOk(null);
+    try {
+      await api.post("/api/v1/hostel/blocks", {
+        name,
+        gender_type: genderType,
+        warden_email: wardenEmail,
+      });
+      setOk("Block created.");
+      setName("");
+      setWardenEmail("");
+      onCreated();
+    } catch (err) {
+      setError(fieldErrorMessage(err) ?? errMsg(err));
+    } finally {
+      setPending(false);
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader title="Create block" />
+      <CardBody>
+        <form onSubmit={submit} className="space-y-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <Field label="Name" htmlFor="block-name">
+              <Input id="block-name" value={name} onChange={(e) => setName(e.target.value)} required />
+            </Field>
+            <Field label="Gender type" htmlFor="block-gender">
+              <Select
+                id="block-gender"
+                value={genderType}
+                onChange={(e) => setGenderType(e.target.value as "M" | "F")}
+              >
+                <option value="M">Male</option>
+                <option value="F">Female</option>
+              </Select>
+            </Field>
+            <Field label="Warden email" htmlFor="block-warden">
+              <Input
+                id="block-warden"
+                type="email"
+                value={wardenEmail}
+                onChange={(e) => setWardenEmail(e.target.value)}
+                required
+              />
+            </Field>
+          </div>
+          {error && <Alert tone="error">{error}</Alert>}
+          {ok && <Alert tone="success">{ok}</Alert>}
+          <Button type="submit" loading={pending}>
+            Create block
+          </Button>
+        </form>
+      </CardBody>
+    </Card>
+  );
+}
+
+function CreateRoom({ blocks, onCreated }: { blocks: Block[]; onCreated: () => void }) {
+  const [blockId, setBlockId] = useState("");
+  const [roomNo, setRoomNo] = useState("");
+  const [capacity, setCapacity] = useState("2");
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [ok, setOk] = useState<string | null>(null);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    setPending(true);
+    setError(null);
+    setOk(null);
+    try {
+      await api.post("/api/v1/hostel/rooms", {
+        block_id: blockId,
+        room_no: roomNo,
+        capacity: Number(capacity),
+      });
+      setOk("Room created.");
+      setRoomNo("");
+      onCreated();
+    } catch (err) {
+      setError(fieldErrorMessage(err) ?? errMsg(err));
+    } finally {
+      setPending(false);
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader title="Create room" />
+      <CardBody>
+        <form onSubmit={submit} className="space-y-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <Field label="Block" htmlFor="room-block">
+              <Select id="room-block" value={blockId} onChange={(e) => setBlockId(e.target.value)} required>
+                <option value="" disabled>
+                  Select a block
+                </option>
+                {blocks.map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.name}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+            <Field label="Room number" htmlFor="room-no">
+              <Input id="room-no" value={roomNo} onChange={(e) => setRoomNo(e.target.value)} required />
+            </Field>
+            <Field label="Capacity" htmlFor="room-capacity">
+              <Input
+                id="room-capacity"
+                type="number"
+                min={1}
+                value={capacity}
+                onChange={(e) => setCapacity(e.target.value)}
+                required
+              />
+            </Field>
+          </div>
+          {error && <Alert tone="error">{error}</Alert>}
+          {ok && <Alert tone="success">{ok}</Alert>}
+          <Button type="submit" loading={pending}>
+            Create room
           </Button>
         </form>
       </CardBody>
