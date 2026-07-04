@@ -4,7 +4,7 @@ import { render, screen, act, fireEvent } from "@testing-library/react";
 
 // Stable router (useAuthGuard effect deps on it).
 const router = { replace: vi.fn(), push: vi.fn(), prefetch: vi.fn() };
-vi.mock("next/navigation", () => ({ useRouter: () => router }));
+vi.mock("next/navigation", () => ({ useRouter: () => router, usePathname: () => "/" }));
 
 const get = vi.fn();
 const post = vi.fn();

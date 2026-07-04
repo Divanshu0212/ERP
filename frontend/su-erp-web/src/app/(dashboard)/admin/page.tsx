@@ -6,19 +6,19 @@ import { DashboardShell } from "@/components/DashboardShell";
 import { DataPanel } from "@/components/DataPanel";
 import { api, ApiError } from "@/lib/api";
 import { listItems, listTotal } from "@/lib/paginate";
+import { Card, CardBody, CardHeader } from "@/components/ui/Card";
+import { StatCard } from "@/components/ui/StatCard";
+import { StatusPill } from "@/components/ui/StatusPill";
+import { Field } from "@/components/ui/Field";
+import { Input } from "@/components/ui/Input";
+import { Select } from "@/components/ui/Select";
+import { Button } from "@/components/ui/Button";
+import { Alert } from "@/components/ui/Alert";
+import { Table, TBody, TD, TH, THead, HeaderRow, Row } from "@/components/ui/Table";
 
-// The admin console manages a single institution (the caller's tenant):
-// institution identity, headline counts, the user roster, and user creation.
-// The gateway enforces admin authorization and scopes every response to the
-// caller's institution.
-
-interface Institution {
-  id: string;
-  slug: string;
-  name: string;
-  is_active: boolean;
-  created_at: string;
-}
+// The admin console manages a single institution (the caller's tenant): headline
+// counts, the user roster, and user creation. The institution identity lives in
+// the app shell. The gateway scopes every response to the caller's institution.
 
 interface User {
   id: string;
@@ -37,9 +37,8 @@ interface StatDef {
   path: string;
 }
 
-// Cross-service headline counts. Each service exposes a paginated list; we ask
-// for a single row and read the envelope total. Users come from the auth
-// service (tenant-scoped); the rest are other services fronted by the gateway.
+// Cross-service headline counts: each service exposes a paginated list; we ask
+// for one row and read the envelope total.
 const CROSS_STATS: StatDef[] = [
   { key: "invoices", label: "Invoices", path: "/api/v1/finance/invoices?limit=1" },
   { key: "allocations", label: "Allocations", path: "/api/v1/hostel/allocations?limit=1" },
@@ -72,109 +71,15 @@ interface StatState {
   error: string | null;
 }
 
-function StatCard({
-  label,
-  loading,
-  state,
-}: {
-  label: string;
-  loading: boolean;
-  state?: StatState;
-}) {
-  return (
-    <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-950">
-      <p className="text-sm font-medium text-gray-500 dark:text-gray-400">{label}</p>
-      {loading ? (
-        <p role="status" className="mt-2 text-sm text-gray-400">
-          Loading…
-        </p>
-      ) : state?.error ? (
-        <p role="alert" className="mt-2 text-sm text-red-600 dark:text-red-400">
-          {state.error}
-        </p>
-      ) : (
-        <p className="mt-2 text-3xl font-semibold tabular-nums text-gray-900 dark:text-gray-50">
-          {state?.count ?? 0}
-        </p>
-      )}
-    </div>
-  );
-}
-
-function ActiveBadge({ active }: { active: boolean }) {
-  const cls = active
-    ? "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300"
-    : "bg-gray-200 text-gray-600 dark:bg-gray-800 dark:text-gray-400";
-  return (
-    <span className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-medium ${cls}`}>
-      {active ? "Active" : "Inactive"}
-    </span>
-  );
-}
-
-function InstitutionHeader() {
-  const [inst, setInst] = useState<Institution | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        const data = await api.get<Institution>("/api/v1/auth/institution");
-        if (!cancelled) setInst(data);
-      } catch (e) {
-        if (!cancelled) setError(errMsg(e));
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  return (
-    <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-950">
-      {loading ? (
-        <p role="status" className="text-sm text-gray-500 dark:text-gray-400">
-          Loading institution…
-        </p>
-      ) : error ? (
-        <p role="alert" className="text-sm text-red-600 dark:text-red-400">
-          {error}
-        </p>
-      ) : inst ? (
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-50">
-              {inst.name}
-            </h2>
-            <p className="mt-0.5 font-mono text-xs text-gray-500 dark:text-gray-400">
-              {inst.slug}
-            </p>
-          </div>
-          <ActiveBadge active={inst.is_active} />
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
 function AdminContent() {
-  // Headline counts: users (auth service) + cross-service totals, each isolated.
   const [statsLoading, setStatsLoading] = useState(true);
   const [userCount, setUserCount] = useState<StatState>({ count: null, error: null });
   const [crossStats, setCrossStats] = useState<Record<string, StatState>>({});
 
-  // User roster.
   const [users, setUsers] = useState<User[]>([]);
   const [usersLoading, setUsersLoading] = useState(true);
   const [usersError, setUsersError] = useState<string | null>(null);
 
-  // Add-user form.
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<Role>("student");
   const [password, setPassword] = useState("");
@@ -198,8 +103,7 @@ function AdminContent() {
     setStatsLoading(false);
   }, []);
 
-  // Loads the user roster and derives the Users headline count from the same
-  // envelope, so the table and the card never disagree.
+  // Derives the Users count from the roster envelope so table + card agree.
   const loadUsers = useCallback(async () => {
     setUsersLoading(true);
     setUsersError(null);
@@ -247,17 +151,16 @@ function AdminContent() {
   );
 
   return (
-    <>
-      <InstitutionHeader />
-
+    <div className="space-y-6">
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard label="Users" loading={usersLoading} state={userCount} />
+        <StatCard label="Users" loading={usersLoading} error={userCount.error} value={userCount.count} />
         {CROSS_STATS.map((s) => (
           <StatCard
             key={s.key}
             label={s.label}
             loading={statsLoading}
-            state={crossStats[s.key]}
+            error={crossStats[s.key]?.error}
+            value={crossStats[s.key]?.count ?? null}
           />
         ))}
       </div>
@@ -267,126 +170,86 @@ function AdminContent() {
         loading={usersLoading}
         error={usersError}
         isEmpty={users.length === 0}
-        emptyLabel="No users yet."
+        emptyLabel="No users yet. Add one below."
       >
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm">
-            <thead>
-              <tr className="border-b border-gray-200 text-gray-500 dark:border-gray-800 dark:text-gray-400">
-                <th className="py-2 pr-4 font-medium">Email</th>
-                <th className="py-2 pr-4 font-medium">Role</th>
-                <th className="py-2 pr-4 font-medium">Status</th>
-                <th className="py-2 font-medium">Joined</th>
-              </tr>
-            </thead>
-            <tbody>
-              {users.map((u) => (
-                <tr
-                  key={u.id}
-                  className="border-b border-gray-100 last:border-0 dark:border-gray-900"
-                >
-                  <td className="py-2 pr-4">{u.email}</td>
-                  <td className="py-2 pr-4 capitalize">{u.role}</td>
-                  <td className="py-2 pr-4">
-                    <ActiveBadge active={u.is_active} />
-                  </td>
-                  <td className="py-2 text-gray-500 dark:text-gray-400">
-                    {formatDate(u.date_joined)}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <Table>
+          <THead>
+            <HeaderRow>
+              <TH>Email</TH>
+              <TH>Role</TH>
+              <TH>Status</TH>
+              <TH>Joined</TH>
+            </HeaderRow>
+          </THead>
+          <TBody>
+            {users.map((u) => (
+              <Row key={u.id}>
+                <TD className="font-medium">{u.email}</TD>
+                <TD className="capitalize text-muted">{u.role}</TD>
+                <TD>
+                  <StatusPill status={u.is_active ? "active" : "inactive"} />
+                </TD>
+                <TD className="text-muted">{formatDate(u.date_joined)}</TD>
+              </Row>
+            ))}
+          </TBody>
+        </Table>
       </DataPanel>
 
-      <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-950">
-        <h2 className="mb-3 text-base font-semibold text-gray-900 dark:text-gray-50">
-          Add User
-        </h2>
-        <form onSubmit={onSubmit} className="space-y-4">
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-            <div>
-              <label
-                htmlFor="new-user-email"
-                className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300"
-              >
-                Email
-              </label>
-              <input
-                id="new-user-email"
-                type="email"
-                required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
-              />
+      <Card>
+        <CardHeader title="Add user" />
+        <CardBody>
+          <form onSubmit={onSubmit} className="space-y-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+              <Field label="Email" htmlFor="new-user-email">
+                <Input
+                  id="new-user-email"
+                  type="email"
+                  required
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                />
+              </Field>
+              <Field label="Role" htmlFor="new-user-role">
+                <Select
+                  id="new-user-role"
+                  value={role}
+                  onChange={(e) => setRole(e.target.value as Role)}
+                >
+                  {ROLES.map((r) => (
+                    <option key={r} value={r} className="capitalize">
+                      {r}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+              <Field label="Password" htmlFor="new-user-password">
+                <Input
+                  id="new-user-password"
+                  type="password"
+                  required
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                />
+              </Field>
             </div>
-            <div>
-              <label
-                htmlFor="new-user-role"
-                className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300"
-              >
-                Role
-              </label>
-              <select
-                id="new-user-role"
-                value={role}
-                onChange={(e) => setRole(e.target.value as Role)}
-                className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
-              >
-                {ROLES.map((r) => (
-                  <option key={r} value={r} className="capitalize">
-                    {r}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label
-                htmlFor="new-user-password"
-                className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300"
-              >
-                Password
-              </label>
-              <input
-                id="new-user-password"
-                type="password"
-                required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
-              />
-            </div>
-          </div>
 
-          {formError && (
-            <p role="alert" className="text-sm text-red-600 dark:text-red-400">
-              {formError}
-            </p>
-          )}
-          {formSuccess && (
-            <p role="status" className="text-sm text-green-600 dark:text-green-400">
-              {formSuccess}
-            </p>
-          )}
+            {formError && <Alert tone="error">{formError}</Alert>}
+            {formSuccess && <Alert tone="success">{formSuccess}</Alert>}
 
-          <button
-            type="submit"
-            disabled={submitting}
-            className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-gray-300 disabled:text-gray-500 dark:disabled:bg-gray-800 dark:disabled:text-gray-500"
-          >
-            {submitting ? "Adding…" : "Add User"}
-          </button>
-        </form>
-      </div>
-    </>
+            <Button type="submit" loading={submitting}>
+              Add User
+            </Button>
+          </form>
+        </CardBody>
+      </Card>
+    </div>
   );
 }
 
 export default function AdminDashboard() {
   return (
-    <DashboardShell title="Admin Dashboard" role="admin">
+    <DashboardShell title="Admin" role="admin">
       <AdminContent />
     </DashboardShell>
   );

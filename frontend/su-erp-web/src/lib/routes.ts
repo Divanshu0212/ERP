@@ -4,13 +4,14 @@
 // performs real authorization). Unknown roles fall back to the student view.
 
 /** Roles the frontend recognises for routing. */
-export type Role = "student" | "warden" | "admin";
+export type Role = "student" | "warden" | "admin" | "superadmin";
 
 /** Dashboard base paths, keyed by role. */
 export const DASHBOARD_PATHS: Record<Role, string> = {
   student: "/student",
   warden: "/warden",
   admin: "/admin",
+  superadmin: "/superadmin",
 };
 
 /** All dashboard base paths (used by the auth guard to detect protected routes). */
