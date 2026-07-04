@@ -22,17 +22,21 @@ import uuid as uuid_lib
 import openpyxl
 from django.db.models import F
 from django.http import Http404
+from django.shortcuts import get_object_or_404
 from hostel.lookups import LookupFailed, resolve_user_by_email
-from hostel.models import Allocation, AllocationImportBatch, AllocationImportRow, Room
+from hostel.models import Allocation, AllocationImportBatch, AllocationImportRow, Block, Room
 from hostel.serializers import (
     AllocateRequestSerializer,
     AllocationImportBatchDetailSerializer,
     AllocationImportBatchSerializer,
     AllocationSerializer,
+    BlockCreateSerializer,
+    BlockSerializer,
+    RoomCreateSerializer,
     RoomSerializer,
 )
 from hostel.services import RoomFullError, create_allocation
-from rest_framework.generics import ListAPIView, RetrieveAPIView
+from rest_framework.generics import ListAPIView, ListCreateAPIView, RetrieveAPIView
 from rest_framework.parsers import MultiPartParser
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.views import APIView
@@ -52,6 +56,69 @@ class AvailableRoomsView(ListAPIView):
         # computed property, but its condition maps directly to a queryset
         # filter, keeping pagination's LIMIT/OFFSET push-down intact.
         return Room.objects.filter(occupied_count__lt=F("capacity")).order_by("room_no")
+
+
+class BlockListCreateView(ListCreateAPIView):
+    """GET lists blocks (tenant-scoped, paginated); POST creates one.
+
+    Admin-only: this is hostel setup, not a warden's day-to-day workflow.
+    """
+
+    permission_classes = [role_required("admin")]
+
+    def get_queryset(self):
+        return Block.objects.all().order_by("name")
+
+    def get_serializer_class(self):
+        return BlockCreateSerializer if self.request.method == "POST" else BlockSerializer
+
+    def post(self, request):
+        serializer = BlockCreateSerializer(data=request.data)
+        if not serializer.is_valid():
+            return fail("Invalid block payload.", errors=serializer.errors, status=400)
+
+        try:
+            warden = resolve_user_by_email(
+                serializer.validated_data["warden_email"], request.META.get("HTTP_AUTHORIZATION")
+            )
+        except LookupFailed as exc:
+            return fail(str(exc), status=400 if exc.reason == "not_found" else 502)
+
+        block = Block.objects.create(
+            tenant_id=get_current_tenant(),
+            name=serializer.validated_data["name"],
+            gender_type=serializer.validated_data["gender_type"],
+            warden_id=warden["id"],
+        )
+        return ok(BlockSerializer(block).data, message="Block created.", status=201)
+
+
+class RoomListCreateView(ListCreateAPIView):
+    """GET lists ALL rooms (tenant-scoped, paginated) for management — distinct
+    from AvailableRoomsView, which filters to open rooms for the allocation
+    picker. POST creates a room; admin or warden may do this."""
+
+    permission_classes = [role_required("admin", "warden")]
+
+    def get_queryset(self):
+        return Room.objects.all().order_by("block__name", "room_no")
+
+    def get_serializer_class(self):
+        return RoomCreateSerializer if self.request.method == "POST" else RoomSerializer
+
+    def post(self, request):
+        serializer = RoomCreateSerializer(data=request.data)
+        if not serializer.is_valid():
+            return fail("Invalid room payload.", errors=serializer.errors, status=400)
+
+        block = get_object_or_404(Block.objects.all(), id=serializer.validated_data["block_id"])
+        room = Room.objects.create(
+            tenant_id=get_current_tenant(),
+            block=block,
+            room_no=serializer.validated_data["room_no"],
+            capacity=serializer.validated_data["capacity"],
+        )
+        return ok(RoomSerializer(room).data, message="Room created.", status=201)
 
 
 class AllocationListView(ListAPIView):

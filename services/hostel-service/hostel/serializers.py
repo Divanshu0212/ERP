@@ -4,7 +4,7 @@ Request validation and response shaping only — the allocate flow's actual
 capacity-check/atomic-commit/outbox logic lives in ``hostel.views.AllocateView``.
 """
 
-from hostel.models import Allocation, AllocationImportBatch, AllocationImportRow, Room
+from hostel.models import Allocation, AllocationImportBatch, AllocationImportRow, Block, Room
 from rest_framework import serializers
 
 
@@ -24,11 +24,31 @@ class AllocationSerializer(serializers.ModelSerializer):
 
 class RoomSerializer(serializers.ModelSerializer):
     is_available = serializers.BooleanField(read_only=True)
+    block_name = serializers.CharField(source="block.name", read_only=True)
 
     class Meta:
         model = Room
-        fields = ["id", "block", "room_no", "capacity", "occupied_count", "is_available"]
+        fields = ["id", "block", "block_name", "room_no", "capacity", "occupied_count", "is_available"]
         read_only_fields = fields
+
+
+class BlockSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Block
+        fields = ["id", "name", "gender_type", "warden_id", "created_at"]
+        read_only_fields = fields
+
+
+class BlockCreateSerializer(serializers.Serializer):
+    name = serializers.CharField(max_length=255)
+    gender_type = serializers.ChoiceField(choices=Block.GenderType.choices)
+    warden_email = serializers.EmailField()
+
+
+class RoomCreateSerializer(serializers.Serializer):
+    block_id = serializers.UUIDField()
+    room_no = serializers.CharField(max_length=50)
+    capacity = serializers.IntegerField(min_value=1, default=2)
 
 
 class AllocationImportRowSerializer(serializers.ModelSerializer):
