@@ -7,6 +7,7 @@ import { DataPanel } from "@/components/DataPanel";
 import { api, ApiError } from "@/lib/api";
 import { listItems } from "@/lib/paginate";
 import { openRazorpayCheckout, toPaise } from "@/lib/razorpay";
+import { usePolling } from "@/lib/usePolling";
 import { Card, CardBody, CardHeader } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
@@ -79,8 +80,10 @@ function CanteenContent() {
     }
   }, []);
 
-  const loadOrders = useCallback(async () => {
-    setOrdersLoading(true);
+  // `background` skips the loading spinner so periodic polling doesn't flicker
+  // the panel — only the initial load shows it.
+  const loadOrders = useCallback(async (background = false) => {
+    if (!background) setOrdersLoading(true);
     setOrdersError(null);
     try {
       const data = await api.get("/api/v1/orders/");
@@ -88,7 +91,7 @@ function CanteenContent() {
     } catch (e) {
       setOrdersError(errMsg(e));
     } finally {
-      setOrdersLoading(false);
+      if (!background) setOrdersLoading(false);
     }
   }, []);
 
@@ -96,6 +99,11 @@ function CanteenContent() {
     void loadMenu();
     void loadOrders();
   }, [loadMenu, loadOrders]);
+
+  // Order status changes server-side (canteen owner advances the queue) with
+  // no push channel to the student's browser, so poll for updates while this
+  // tab is open instead of requiring a manual refresh.
+  usePolling(() => void loadOrders(true), 5000);
 
   function setQty(id: string, qty: number) {
     setCart((prev) => {

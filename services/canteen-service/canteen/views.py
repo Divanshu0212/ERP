@@ -27,10 +27,11 @@ from canteen.serializers import (
     OrderSerializer,
 )
 from django.db import transaction
+from django.db.models import ProtectedError
 from django.utils import timezone
 from rest_framework.generics import (
     ListCreateAPIView,
-    RetrieveUpdateAPIView,
+    RetrieveUpdateDestroyAPIView,
 )
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.views import APIView
@@ -115,20 +116,51 @@ class MenuItemListCreateView(ListCreateAPIView):
     def perform_create(self, serializer):
         serializer.save(tenant_id=self.request.tenant_id)
 
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        self.perform_create(serializer)
+        return ok(serializer.data, message="Menu item added.", status=201)
 
-class MenuItemDetailView(RetrieveUpdateAPIView):
-    """GET/PATCH a single menu item. Mutations are canteen_owner/admin only
-    (owner toggles ``available`` / edits price/name)."""
+
+class MenuItemDetailView(RetrieveUpdateDestroyAPIView):
+    """GET/PATCH/DELETE a single menu item. Mutations are canteen_owner/admin
+    only (owner toggles ``available`` / edits price/name / removes an item).
+
+    DELETE is blocked (400) for an item still referenced by an order —
+    ``OrderItem.menu_item`` is ``PROTECT``, so historical orders must keep
+    their line items intact; toggle ``available=False`` instead to retire it.
+    """
 
     serializer_class = MenuItemSerializer
 
     def get_permissions(self):
-        if self.request.method in ("PUT", "PATCH"):
+        if self.request.method in ("PUT", "PATCH", "DELETE"):
             return [role_required(*_STAFF_ROLES)()]
         return [IsAuthenticated()]
 
     def get_queryset(self):
         return MenuItem.objects.all()
+
+    def update(self, request, *args, **kwargs):
+        partial = kwargs.pop("partial", False)
+        instance = self.get_object()
+        serializer = self.get_serializer(instance, data=request.data, partial=partial)
+        serializer.is_valid(raise_exception=True)
+        self.perform_update(serializer)
+        return ok(serializer.data, message="Menu item updated.")
+
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        try:
+            instance.delete()
+        except ProtectedError:
+            return fail(
+                "This item has existing orders and cannot be deleted. "
+                "Mark it unavailable instead.",
+                status=400,
+            )
+        return ok(None, message="Menu item deleted.")
 
 
 class OrderListCreateView(ListCreateAPIView):
@@ -233,7 +265,7 @@ class OrderCheckoutView(APIView):
             return exc.response
 
         if razorpay_gateway.is_configured():
-            receipt = f"cart-{request.user.id}-{int(timezone.now().timestamp())}"
+            receipt = f"cart-{str(request.user.id)[:8]}-{int(timezone.now().timestamp())}"
             order = razorpay_gateway.create_order(total, receipt=receipt)
         else:
             order = {

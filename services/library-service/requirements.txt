@@ -3,6 +3,7 @@ djangorestframework
 django-environ
 dj-database-url
 psycopg[binary]
+gunicorn
 -e ../../shared/libs/suerp_common
 
 # Test tooling
