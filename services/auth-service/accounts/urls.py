@@ -9,6 +9,7 @@ from accounts.views import (
     RefreshView,
     RegisterView,
     UserAdminView,
+    UserByEmailView,
 )
 from django.urls import path
 
@@ -19,6 +20,7 @@ urlpatterns = [
     path("me", MeView.as_view(), name="auth-me"),
     path("institution", InstitutionView.as_view(), name="auth-institution"),
     path("users", UserAdminView.as_view(), name="auth-users"),
+    path("users/by-email/", UserByEmailView.as_view(), name="auth-user-by-email"),
     path("institutions", PlatformInstitutionView.as_view(), name="auth-institutions"),
     path("admins", PlatformAdminView.as_view(), name="auth-admins"),
 ]

@@ -63,6 +63,12 @@ class UserListSerializer(serializers.Serializer):
     date_joined = serializers.DateTimeField()
 
 
+class UserByEmailSerializer(serializers.Serializer):
+    id = serializers.UUIDField()
+    email = serializers.EmailField()
+    role = serializers.CharField()
+
+
 class AdminCreateUserSerializer(serializers.Serializer):
     """Admin-side user creation. The tenant is taken from the acting admin's
     JWT claim (passed in as ``institution``), never from the request body."""

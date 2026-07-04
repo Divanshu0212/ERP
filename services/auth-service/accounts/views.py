@@ -19,6 +19,7 @@ from accounts.serializers import (
     RefreshSerializer,
     RegisterSerializer,
     SuperadminCreateAdminSerializer,
+    UserByEmailSerializer,
     UserListSerializer,
 )
 from django.conf import settings
@@ -254,6 +255,34 @@ class UserAdminView(ListAPIView):
             message="User created.",
             status=201,
         )
+
+
+class UserByEmailView(APIView):
+    """GET /api/v1/auth/users/by-email/?email=... — resolve an email to its
+    User.id within the caller's own tenant.
+
+    This is the platform's single identity-resolution endpoint: every
+    student_id/warden_id elsewhere IS this User.id (see docs/superpowers/
+    specs/2026-07-04-allocation-email-bulk-import-design.md), so
+    hostel-service calls this endpoint (through the gateway, forwarding the
+    caller's own token) to turn a warden-typed email into the UUID its
+    Allocation/Block rows actually store.
+    """
+
+    permission_classes = [role_required("warden", "admin")]
+
+    def get(self, request):
+        email = request.query_params.get("email", "").strip()
+        if not email:
+            return fail("Query parameter 'email' is required.", status=400)
+
+        email = User.objects.normalize_email(email)
+        try:
+            user = User.objects.get(tenant_id=request.user.tenant_id, email__iexact=email)
+        except User.DoesNotExist:
+            return fail(f"No user found with email {email}.", status=404)
+
+        return ok(UserByEmailSerializer({"id": user.id, "email": user.email, "role": user.role}).data)
 
 
 PLATFORM_SLUG = "platform"
