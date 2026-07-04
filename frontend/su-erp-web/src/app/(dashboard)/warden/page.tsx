@@ -10,6 +10,7 @@ import { Card, CardBody, CardHeader } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Field } from "@/components/ui/Field";
 import { Input } from "@/components/ui/Input";
+import { Select } from "@/components/ui/Select";
 import { Alert } from "@/components/ui/Alert";
 import { StatusPill } from "@/components/ui/StatusPill";
 import { Table, TBody, TD, TH, THead, HeaderRow, Row } from "@/components/ui/Table";
@@ -26,6 +27,14 @@ interface Grievance {
   raised_by: string;
   status: string;
   assigned_to: string;
+}
+
+interface Room {
+  id: string;
+  block_name: string;
+  room_no: string;
+  capacity: number;
+  occupied_count: number;
 }
 
 function errMsg(e: unknown): string {
@@ -68,14 +77,34 @@ function WardenContent() {
     }
   }, []);
 
+  const [rooms, setRooms] = useState<Room[]>([]);
+  const [roomsLoading, setRoomsLoading] = useState(true);
+
+  const loadRooms = useCallback(async () => {
+    setRoomsLoading(true);
+    try {
+      const data = await api.get("/api/v1/hostel/rooms/available");
+      setRooms(listItems<Room>(data));
+    } finally {
+      setRoomsLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     void loadAllocations();
     void loadGrievances();
-  }, [loadAllocations, loadGrievances]);
+    void loadRooms();
+  }, [loadAllocations, loadGrievances, loadRooms]);
 
   return (
     <div className="space-y-6">
-      <CreateAllocation onCreated={loadAllocations} />
+      <CreateAllocation
+        rooms={rooms}
+        onCreated={() => {
+          void loadAllocations();
+          void loadRooms();
+        }}
+      />
 
       <DataPanel
         title="Pending hostel allocations"
@@ -140,9 +169,9 @@ function WardenContent() {
   );
 }
 
-function CreateAllocation({ onCreated }: { onCreated: () => void }) {
+function CreateAllocation({ rooms, onCreated }: { rooms: Room[]; onCreated: () => void }) {
   const [roomId, setRoomId] = useState("");
-  const [studentId, setStudentId] = useState("");
+  const [studentEmail, setStudentEmail] = useState("");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [ok, setOk] = useState<string | null>(null);
@@ -155,11 +184,11 @@ function CreateAllocation({ onCreated }: { onCreated: () => void }) {
     try {
       await api.post("/api/v1/hostel/allocate", {
         room_id: roomId,
-        student_id: studentId,
+        student_email: studentEmail,
       });
       setOk("Allocation created.");
       setRoomId("");
-      setStudentId("");
+      setStudentEmail("");
       onCreated();
     } catch (err) {
       setError(errMsg(err));
@@ -174,19 +203,29 @@ function CreateAllocation({ onCreated }: { onCreated: () => void }) {
       <CardBody>
         <form onSubmit={submit} className="space-y-4">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <Field label="Room ID" htmlFor="alloc-room">
-              <Input
+            <Field label="Room" htmlFor="alloc-room">
+              <Select
                 id="alloc-room"
                 value={roomId}
                 onChange={(e) => setRoomId(e.target.value)}
                 required
-              />
+              >
+                <option value="" disabled>
+                  Select a room
+                </option>
+                {rooms.map((r) => (
+                  <option key={r.id} value={r.id}>
+                    {r.block_name}/{r.room_no} ({r.occupied_count}/{r.capacity})
+                  </option>
+                ))}
+              </Select>
             </Field>
-            <Field label="Student ID" htmlFor="alloc-student">
+            <Field label="Student email" htmlFor="alloc-student">
               <Input
                 id="alloc-student"
-                value={studentId}
-                onChange={(e) => setStudentId(e.target.value)}
+                type="email"
+                value={studentEmail}
+                onChange={(e) => setStudentEmail(e.target.value)}
                 required
               />
             </Field>
