@@ -2,6 +2,8 @@
 
 import type { ReactNode } from "react";
 
+import { Card, CardHeader } from "@/components/ui/Card";
+
 /**
  * A titled panel that renders one of loading / error / empty / content states.
  * Shared by the role dashboards so every data section looks and behaves alike.
@@ -11,7 +13,7 @@ export function DataPanel({
   loading,
   error,
   isEmpty,
-  emptyLabel = "Nothing to show.",
+  emptyLabel = "Nothing to show yet.",
   action,
   children,
 }: {
@@ -24,24 +26,23 @@ export function DataPanel({
   children: ReactNode;
 }) {
   return (
-    <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-950">
-      <div className="mb-3 flex items-center justify-between">
-        <h2 className="text-base font-semibold text-gray-900 dark:text-gray-50">{title}</h2>
-        {action}
+    <Card>
+      <CardHeader title={title} action={action} />
+      <div className="p-4">
+        {loading ? (
+          <p role="status" className="text-[13px] text-muted">
+            Loading…
+          </p>
+        ) : error ? (
+          <p role="alert" className="text-[13px] text-danger">
+            {error}
+          </p>
+        ) : isEmpty ? (
+          <p className="text-[13px] text-muted">{emptyLabel}</p>
+        ) : (
+          children
+        )}
       </div>
-      {loading ? (
-        <p role="status" className="text-sm text-gray-500 dark:text-gray-400">
-          Loading…
-        </p>
-      ) : error ? (
-        <p role="alert" className="text-sm text-red-600 dark:text-red-400">
-          {error}
-        </p>
-      ) : isEmpty ? (
-        <p className="text-sm text-gray-500 dark:text-gray-400">{emptyLabel}</p>
-      ) : (
-        children
-      )}
-    </div>
+    </Card>
   );
 }

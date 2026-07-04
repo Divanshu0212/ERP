@@ -2,26 +2,110 @@
 @tailwind components;
 @tailwind utilities;
 
+/*
+ * SU-ERP design tokens. Institutional, trustworthy, dense.
+ * Light is the default; dark applies via prefers-color-scheme and an explicit
+ * [data-theme] override wins in both directions.
+ */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --canvas: #f4f6f5;
+  --surface: #ffffff;
+  --surface-2: #f4f6f5;
+  --border: #e2e6e4;
+  --ink: #12211c;
+  --muted: #586a62;
+  --primary: #0e6e5c;
+  --primary-hover: #0a5b4c;
+  --primary-fg: #ffffff;
+  --accent-gold: #a9762b;
+  --success: #157f52;
+  --warn: #b7791f;
+  --danger: #c0392b;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --canvas: #0c1512;
+    --surface: #111d19;
+    --surface-2: #0c1512;
+    --border: #22302b;
+    --ink: #e8efeb;
+    --muted: #8ca096;
+    --primary: #1f8a74;
+    --primary-hover: #23a087;
+    --primary-fg: #ffffff;
+    --accent-gold: #c79a4f;
+    --success: #2f9e6b;
+    --warn: #d0983b;
+    --danger: #e05d4f;
   }
 }
 
+/* Explicit overrides beat the media query in both directions. */
+:root[data-theme="light"] {
+  --canvas: #f4f6f5;
+  --surface: #ffffff;
+  --surface-2: #f4f6f5;
+  --border: #e2e6e4;
+  --ink: #12211c;
+  --muted: #586a62;
+  --primary: #0e6e5c;
+  --primary-hover: #0a5b4c;
+  --primary-fg: #ffffff;
+  --accent-gold: #a9762b;
+  --success: #157f52;
+  --warn: #b7791f;
+  --danger: #c0392b;
+}
+
+:root[data-theme="dark"] {
+  --canvas: #0c1512;
+  --surface: #111d19;
+  --surface-2: #0c1512;
+  --border: #22302b;
+  --ink: #e8efeb;
+  --muted: #8ca096;
+  --primary: #1f8a74;
+  --primary-hover: #23a087;
+  --primary-fg: #ffffff;
+  --accent-gold: #c79a4f;
+  --success: #2f9e6b;
+  --warn: #d0983b;
+  --danger: #e05d4f;
+}
+
+* {
+  border-color: var(--border);
+}
+
 body {
-  color: var(--foreground);
-  background: var(--background);
-  font-family: Arial, Helvetica, sans-serif;
+  color: var(--ink);
+  background: var(--canvas);
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Numbers should line up in tables and stat tiles. */
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
 }
 
 @layer utilities {
   .text-balance {
     text-wrap: balance;
+  }
+}
+
+/* Respect users who ask for less motion. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
   }
 }
