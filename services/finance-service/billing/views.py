@@ -18,7 +18,7 @@ invoice is also treated idempotently (repeat pay on a paid invoice returns
 success without touching the gateway or emitting a new event).
 """
 
-from billing.gateway import SimulatedGateway
+from billing.gateway import ChargeResult, SimulatedGateway
 from billing.models import Invoice, Payment
 from billing.serializers import InvoiceCreateSerializer, InvoiceSerializer, PaySerializer
 from django.db import transaction
@@ -26,6 +26,7 @@ from django.shortcuts import get_object_or_404
 from rest_framework.generics import ListAPIView
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.views import APIView
+from suerp_common import razorpay_gateway
 from suerp_common.envelope import fail, ok
 from suerp_common.outbox import publish_event
 from suerp_common.permissions import role_required
@@ -70,6 +71,27 @@ def _payment_outcome(payment: Payment) -> dict:
     }
 
 
+class RazorpayOrderView(APIView):
+    """POST /api/v1/finance/invoices/<uuid:invoice_id>/razorpay-order.
+
+    Creates a Razorpay order for the invoice's amount so a frontend can open
+    the checkout widget. Tenant-scoped (cross-tenant/unknown invoice -> 404).
+    Returns 400 if Razorpay isn't configured on this server (the pay flow can
+    still be exercised via the simulated path in that case).
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, invoice_id):
+        invoice = get_object_or_404(Invoice.objects, id=invoice_id)
+
+        if not razorpay_gateway.is_configured():
+            return fail("Razorpay is not configured on this server.", status=400)
+
+        order = razorpay_gateway.create_order(invoice.amount, receipt=f"invoice-{invoice.id}")
+        return ok(order, message="Razorpay order created.")
+
+
 class PayView(APIView):
     def post(self, request):
         serializer = PaySerializer(data=request.data)
@@ -78,6 +100,10 @@ class PayView(APIView):
 
         invoice_id = serializer.validated_data["invoice_id"]
         idempotency_key = serializer.validated_data["idempotency_key"]
+        razorpay_order_id = serializer.validated_data.get("razorpay_order_id")
+        razorpay_payment_id = serializer.validated_data.get("razorpay_payment_id")
+        razorpay_signature = serializer.validated_data.get("razorpay_signature")
+        has_razorpay_proof = all((razorpay_order_id, razorpay_payment_id, razorpay_signature))
 
         with transaction.atomic():
             invoice = get_object_or_404(Invoice.objects.select_for_update(), id=invoice_id)
@@ -100,7 +126,27 @@ class PayView(APIView):
                 if prior is not None:
                     return ok(_payment_outcome(prior), message="Invoice already paid.")
 
-            result = SimulatedGateway().charge(invoice.amount, idempotency_key)
+            if has_razorpay_proof:
+                # Real Razorpay path: verify the client's proof-of-payment
+                # signature. Success/failure map onto exactly the same commit
+                # branches as the simulated gateway below.
+                verified = razorpay_gateway.verify_signature(
+                    razorpay_order_id, razorpay_payment_id, razorpay_signature
+                )
+                if verified:
+                    result = ChargeResult(
+                        success=True,
+                        gateway_ref=razorpay_payment_id,
+                        message="Razorpay payment verified.",
+                    )
+                else:
+                    result = ChargeResult(
+                        success=False,
+                        gateway_ref=razorpay_payment_id,
+                        message="Razorpay signature verification failed.",
+                    )
+            else:
+                result = SimulatedGateway().charge(invoice.amount, idempotency_key)
 
             if result.success:
                 payment = Payment.objects.create(

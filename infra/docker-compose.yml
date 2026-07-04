@@ -207,6 +207,8 @@ services:
     environment: &finance-env
       <<: *django-env
       DATABASE_URL: postgres://suerp:suerp@pgbouncer:6432/finance
+      RAZORPAY_KEY_ID: ${RAZORPAY_KEY_ID:-}
+      RAZORPAY_KEY_SECRET: ${RAZORPAY_KEY_SECRET:-}
     command: *web-command
 
   grievance-service:
@@ -312,6 +314,8 @@ services:
     environment:
       <<: *django-env
       DATABASE_URL: postgres://suerp:suerp@pgbouncer:6432/canteen
+      RAZORPAY_KEY_ID: ${RAZORPAY_KEY_ID:-}
+      RAZORPAY_KEY_SECRET: ${RAZORPAY_KEY_SECRET:-}
     command: *web-command
 
   placement-service:

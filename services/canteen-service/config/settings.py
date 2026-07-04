@@ -95,3 +95,9 @@ REST_FRAMEWORK = {
     "DEFAULT_PAGINATION_CLASS": "suerp_common.envelope.StandardPagination",
     "PAGE_SIZE": 20,
 }
+
+# --- Razorpay (real test-mode payments) -------------------------------------
+# Read by suerp_common.razorpay_gateway. Empty defaults -> is_configured() is
+# False and the checkout/order flow falls back to simulated mode (no network).
+RAZORPAY_KEY_ID = env("RAZORPAY_KEY_ID", default="")
+RAZORPAY_KEY_SECRET = env("RAZORPAY_KEY_SECRET", default="")

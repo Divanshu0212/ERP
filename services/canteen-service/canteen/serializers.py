@@ -25,13 +25,34 @@ class OrderItemInputSerializer(serializers.Serializer):
 
 
 class OrderCreateSerializer(serializers.Serializer):
-    """Incoming order request: a non-empty list of line items."""
+    """Incoming order request: a non-empty list of line items.
+
+    Optional Razorpay proof-of-payment fields. When all three are present and
+    Razorpay is configured, the signature is verified before the order is
+    created; when absent (simulated/dev/test mode) the order is created
+    directly, preserving the pre-payment behavior.
+    """
+
+    items = OrderItemInputSerializer(many=True)
+    razorpay_order_id = serializers.CharField(max_length=255, required=False)
+    razorpay_payment_id = serializers.CharField(max_length=255, required=False)
+    razorpay_signature = serializers.CharField(max_length=255, required=False)
+
+    def validate_items(self, value):
+        if not value:
+            raise serializers.ValidationError("An order must contain at least one item.")
+        return value
+
+
+class CheckoutSerializer(serializers.Serializer):
+    """Incoming checkout request: a non-empty list of line items (no order is
+    created — this only prices the cart and opens a Razorpay order)."""
 
     items = OrderItemInputSerializer(many=True)
 
     def validate_items(self, value):
         if not value:
-            raise serializers.ValidationError("An order must contain at least one item.")
+            raise serializers.ValidationError("A checkout must contain at least one item.")
         return value
 
 
