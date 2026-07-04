@@ -9,6 +9,7 @@ vi.mock("next/navigation", () => ({ useRouter: () => router, usePathname: () => 
 
 const get = vi.fn();
 const post = vi.fn();
+const upload = vi.fn();
 vi.mock("@/lib/api", async () => {
   const actual = await vi.importActual<typeof import("@/lib/api")>("@/lib/api");
   return {
@@ -17,6 +18,7 @@ vi.mock("@/lib/api", async () => {
       ...actual.api,
       get: (...args: unknown[]) => get(...args),
       post: (...args: unknown[]) => post(...args),
+      upload: (...args: unknown[]) => upload(...args),
     },
   };
 });
@@ -35,6 +37,7 @@ describe("WardenDashboard", () => {
   beforeEach(() => {
     get.mockReset();
     post.mockReset();
+    upload.mockReset();
     window.localStorage.clear();
     setToken(wardenToken());
   });
@@ -107,5 +110,25 @@ describe("WardenDashboard", () => {
       }),
     );
     expect(await screen.findByText("Allocation created.")).toBeInTheDocument();
+  });
+
+  it("uploads a bulk allocation file and shows the summary", async () => {
+    get.mockResolvedValue({ items: [], total: 0 });
+    upload.mockResolvedValue({ batch_id: "b1", total_rows: 3, success_count: 2, fail_count: 1 });
+
+    render(<WardenDashboard />);
+    await screen.findByText("No pending allocations.");
+
+    const file = new File(["room_id,student_email\n"], "import.csv", { type: "text/csv" });
+    const input = screen.getByLabelText("File") as HTMLInputElement;
+    fireEvent.change(input, { target: { files: [file] } });
+    fireEvent.click(screen.getByRole("button", { name: "Upload" }));
+
+    await waitFor(() =>
+      expect(upload).toHaveBeenCalledWith("/api/v1/hostel/allocate/bulk", file),
+    );
+    expect(
+      await screen.findByText(/2 succeeded, 1 failed out of 3/),
+    ).toBeInTheDocument();
   });
 });

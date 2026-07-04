@@ -106,6 +106,13 @@ function WardenContent() {
         }}
       />
 
+      <BulkAllocationImport
+        onImported={() => {
+          void loadAllocations();
+          void loadRooms();
+        }}
+      />
+
       <DataPanel
         title="Pending hostel allocations"
         loading={allocLoading}
@@ -234,6 +241,74 @@ function CreateAllocation({ rooms, onCreated }: { rooms: Room[]; onCreated: () =
           {ok && <Alert tone="success">{ok}</Alert>}
           <Button type="submit" loading={pending}>
             Create allocation
+          </Button>
+        </form>
+      </CardBody>
+    </Card>
+  );
+}
+
+interface BulkImportSummary {
+  batch_id: string;
+  total_rows: number;
+  success_count: number;
+  fail_count: number;
+}
+
+function BulkAllocationImport({ onImported }: { onImported: () => void }) {
+  const [file, setFile] = useState<File | null>(null);
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [summary, setSummary] = useState<BulkImportSummary | null>(null);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!file) return;
+    setPending(true);
+    setError(null);
+    setSummary(null);
+    try {
+      const result = await api.upload<BulkImportSummary>("/api/v1/hostel/allocate/bulk", file);
+      setSummary(result);
+      setFile(null);
+      onImported();
+    } catch (err) {
+      setError(errMsg(err));
+    } finally {
+      setPending(false);
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader title="Bulk allocate from CSV/XLSX" />
+      <CardBody>
+        <form onSubmit={submit} className="space-y-4">
+          <a
+            href="/sample-allocation-import.csv"
+            download
+            className="text-[13px] text-primary underline"
+          >
+            Download sample CSV
+          </a>
+          <Field label="File" htmlFor="bulk-file">
+            <input
+              id="bulk-file"
+              type="file"
+              accept=".csv,.xlsx"
+              onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+              className="block w-full text-sm text-ink"
+            />
+          </Field>
+          {error && <Alert tone="error">{error}</Alert>}
+          {summary && (
+            <Alert tone={summary.fail_count > 0 ? "info" : "success"}>
+              {summary.success_count} succeeded, {summary.fail_count} failed out of{" "}
+              {summary.total_rows}. See Import Logs below for details.
+            </Alert>
+          )}
+          <Button type="submit" loading={pending} disabled={!file}>
+            Upload
           </Button>
         </form>
       </CardBody>
