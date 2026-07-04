@@ -6,6 +6,7 @@ import { DashboardShell } from "@/components/DashboardShell";
 import { DataPanel } from "@/components/DataPanel";
 import { api, ApiError } from "@/lib/api";
 import { listItems } from "@/lib/paginate";
+import { usePolling } from "@/lib/usePolling";
 import { Card, CardBody, CardHeader } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Field } from "@/components/ui/Field";
@@ -220,8 +221,10 @@ function OrdersSection() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [rowError, setRowError] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  // `background` skips the loading spinner so periodic polling doesn't
+  // flicker the panel — only the initial load shows it.
+  const load = useCallback(async (background = false) => {
+    if (!background) setLoading(true);
     setLoadError(null);
     try {
       const data = await api.get("/api/v1/orders/");
@@ -229,13 +232,17 @@ function OrdersSection() {
     } catch (e) {
       setLoadError(errMsg(e));
     } finally {
-      setLoading(false);
+      if (!background) setLoading(false);
     }
   }, []);
 
   useEffect(() => {
     void load();
   }, [load]);
+
+  // New orders and status advances happen from the student side / other
+  // sessions with no push channel to this queue, so poll while the tab is open.
+  usePolling(() => void load(true), 5000);
 
   async function advance(id: string, status: string) {
     setRowError(null);
