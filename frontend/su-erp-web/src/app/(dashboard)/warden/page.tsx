@@ -6,6 +6,8 @@ import { DashboardShell } from "@/components/DashboardShell";
 import { DataPanel } from "@/components/DataPanel";
 import { api, ApiError } from "@/lib/api";
 import { listItems } from "@/lib/paginate";
+import { StatusPill } from "@/components/ui/StatusPill";
+import { Table, TBody, TD, TH, THead, HeaderRow, Row } from "@/components/ui/Table";
 
 interface Allocation {
   id: string;
@@ -67,79 +69,73 @@ function WardenContent() {
   }, [loadAllocations, loadGrievances]);
 
   return (
-    <>
+    <div className="space-y-6">
       <DataPanel
-        title="Pending Hostel Allocations"
+        title="Pending hostel allocations"
         loading={allocLoading}
         error={allocError}
         isEmpty={allocations.length === 0}
         emptyLabel="No pending allocations."
       >
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm">
-            <thead>
-              <tr className="border-b border-gray-200 text-gray-500 dark:border-gray-800 dark:text-gray-400">
-                <th className="py-2 pr-4 font-medium">Student</th>
-                <th className="py-2 pr-4 font-medium">Room</th>
-                <th className="py-2 font-medium">Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {allocations.map((a) => (
-                <tr
-                  key={a.id}
-                  className="border-b border-gray-100 last:border-0 dark:border-gray-900"
-                >
-                  <td className="py-2 pr-4">{a.student_id}</td>
-                  <td className="py-2 pr-4">{a.room}</td>
-                  <td className="py-2 capitalize">{a.status}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <Table>
+          <THead>
+            <HeaderRow>
+              <TH>Student</TH>
+              <TH>Room</TH>
+              <TH>Status</TH>
+            </HeaderRow>
+          </THead>
+          <TBody>
+            {allocations.map((a) => (
+              <Row key={a.id}>
+                <TD className="font-mono text-[12px]">{a.student_id}</TD>
+                <TD className="font-medium">{a.room}</TD>
+                <TD>
+                  <StatusPill status={a.status} />
+                </TD>
+              </Row>
+            ))}
+          </TBody>
+        </Table>
       </DataPanel>
 
       <DataPanel
-        title="Escalated Grievances"
+        title="Escalated grievances"
         loading={grievLoading}
         error={grievError}
         isEmpty={grievances.length === 0}
         emptyLabel="No escalated grievances."
       >
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm">
-            <thead>
-              <tr className="border-b border-gray-200 text-gray-500 dark:border-gray-800 dark:text-gray-400">
-                <th className="py-2 pr-4 font-medium">Ticket</th>
-                <th className="py-2 pr-4 font-medium">Raised by</th>
-                <th className="py-2 pr-4 font-medium">Status</th>
-                <th className="py-2 font-medium">Assigned to</th>
-              </tr>
-            </thead>
-            <tbody>
-              {grievances.map((g) => (
-                <tr
-                  key={g.id}
-                  className="border-b border-gray-100 last:border-0 dark:border-gray-900"
-                >
-                  <td className="py-2 pr-4 font-mono text-xs">{g.id}</td>
-                  <td className="py-2 pr-4">{g.raised_by}</td>
-                  <td className="py-2 pr-4 capitalize">{g.status}</td>
-                  <td className="py-2">{g.assigned_to}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <Table>
+          <THead>
+            <HeaderRow>
+              <TH>Ticket</TH>
+              <TH>Raised by</TH>
+              <TH>Status</TH>
+              <TH>Assigned to</TH>
+            </HeaderRow>
+          </THead>
+          <TBody>
+            {grievances.map((g) => (
+              <Row key={g.id}>
+                <TD className="font-mono text-[12px]">{g.id}</TD>
+                <TD>{g.raised_by}</TD>
+                <TD>
+                  <StatusPill status={g.status} />
+                </TD>
+                <TD className="text-muted">{g.assigned_to}</TD>
+              </Row>
+            ))}
+          </TBody>
+        </Table>
       </DataPanel>
-    </>
+    </div>
   );
 }
 
 export default function WardenDashboard() {
   return (
-    <DashboardShell title="Warden Dashboard" role="warden">
+    <DashboardShell title="Overview" role="warden">
       <WardenContent />
     </DashboardShell>
   );

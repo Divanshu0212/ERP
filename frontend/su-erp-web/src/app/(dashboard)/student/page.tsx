@@ -6,6 +6,10 @@ import { DashboardShell } from "@/components/DashboardShell";
 import { DataPanel } from "@/components/DataPanel";
 import { api, ApiError } from "@/lib/api";
 import { listItems } from "@/lib/paginate";
+import { Card, CardBody, CardHeader } from "@/components/ui/Card";
+import { Button } from "@/components/ui/Button";
+import { StatusPill } from "@/components/ui/StatusPill";
+import { Table, TBody, TD, TH, THead, HeaderRow, Row } from "@/components/ui/Table";
 
 interface Invoice {
   id: string;
@@ -81,49 +85,44 @@ function StudentContent() {
   }, [loadInvoices, loadNotifications]);
 
   return (
-    <>
+    <div className="space-y-6">
       <DataPanel
-        title="Fees & Invoices"
+        title="Fees & invoices"
         loading={invoicesLoading}
         error={invoicesError}
         isEmpty={invoices.length === 0}
         emptyLabel="No invoices yet."
       >
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm">
-            <thead>
-              <tr className="border-b border-gray-200 text-gray-500 dark:border-gray-800 dark:text-gray-400">
-                <th className="py-2 pr-4 font-medium">Purpose</th>
-                <th className="py-2 pr-4 font-medium">Amount</th>
-                <th className="py-2 pr-4 font-medium">Status</th>
-                <th className="py-2 font-medium">Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {invoices.map((inv) => (
-                <tr
-                  key={inv.id}
-                  className="border-b border-gray-100 last:border-0 dark:border-gray-900"
-                >
-                  <td className="py-2 pr-4">{inv.purpose}</td>
-                  <td className="py-2 pr-4 tabular-nums">{formatAmount(inv.amount)}</td>
-                  <td className="py-2 pr-4">
-                    <span className="capitalize">{inv.status}</span>
-                  </td>
-                  <td className="py-2">
-                    <button
-                      type="button"
-                      disabled={isPaid(inv.status)}
-                      className="rounded-md bg-blue-600 px-3 py-1 text-xs font-medium text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-gray-300 disabled:text-gray-500 dark:disabled:bg-gray-800 dark:disabled:text-gray-500"
-                    >
-                      {isPaid(inv.status) ? "Paid" : "Pay"}
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <Table>
+          <THead>
+            <HeaderRow>
+              <TH>Purpose</TH>
+              <TH>Amount</TH>
+              <TH>Status</TH>
+              <TH className="text-right">Action</TH>
+            </HeaderRow>
+          </THead>
+          <TBody>
+            {invoices.map((inv) => (
+              <Row key={inv.id}>
+                <TD className="font-medium">{inv.purpose}</TD>
+                <TD className="tabular-nums">{formatAmount(inv.amount)}</TD>
+                <TD>
+                  <StatusPill status={inv.status} />
+                </TD>
+                <TD className="text-right">
+                  <Button
+                    size="sm"
+                    variant={isPaid(inv.status) ? "secondary" : "primary"}
+                    disabled={isPaid(inv.status)}
+                  >
+                    {isPaid(inv.status) ? "Paid" : "Pay"}
+                  </Button>
+                </TD>
+              </Row>
+            ))}
+          </TBody>
+        </Table>
       </DataPanel>
 
       <DataPanel
@@ -133,43 +132,37 @@ function StudentContent() {
         isEmpty={notifications.length === 0}
         emptyLabel="No notifications."
       >
-        <ul className="space-y-3">
+        <ul className="space-y-2">
           {notifications.map((n) => (
-            <li
-              key={n.id}
-              className="rounded-md border border-gray-100 p-3 dark:border-gray-900"
-            >
+            <li key={n.id} className="rounded-md border border-line p-3">
               <div className="flex items-center justify-between gap-3">
-                <p className="font-medium text-gray-900 dark:text-gray-100">{n.title}</p>
-                <span className="shrink-0 text-xs text-gray-400">
-                  {formatDate(n.created_at)}
-                </span>
+                <p className="text-sm font-medium text-ink">{n.title}</p>
+                <span className="shrink-0 text-[11px] text-muted">{formatDate(n.created_at)}</span>
               </div>
-              <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">{n.body}</p>
+              <p className="mt-1 text-[13px] text-muted">{n.body}</p>
             </li>
           ))}
         </ul>
       </DataPanel>
 
-      <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-950">
-        <h2 className="text-base font-semibold text-gray-900 dark:text-gray-50">Grievances</h2>
-        <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-          Have an issue? Raise a grievance and track it to resolution.
-        </p>
-        <button
-          type="button"
-          className="mt-3 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700"
-        >
-          Raise Grievance
-        </button>
-      </div>
-    </>
+      <Card>
+        <CardHeader title="Grievances" />
+        <CardBody>
+          <p className="text-[13px] text-muted">
+            Have an issue? Raise a grievance and track it to resolution.
+          </p>
+          <Button className="mt-3" size="sm">
+            Raise Grievance
+          </Button>
+        </CardBody>
+      </Card>
+    </div>
   );
 }
 
 export default function StudentDashboard() {
   return (
-    <DashboardShell title="Student Dashboard" role="student">
+    <DashboardShell title="Overview" role="student">
       <StudentContent />
     </DashboardShell>
   );
