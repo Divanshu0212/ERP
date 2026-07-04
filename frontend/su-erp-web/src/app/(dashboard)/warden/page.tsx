@@ -113,6 +113,8 @@ function WardenContent() {
         }}
       />
 
+      <ImportLogs />
+
       <DataPanel
         title="Pending hostel allocations"
         loading={allocLoading}
@@ -313,6 +315,128 @@ function BulkAllocationImport({ onImported }: { onImported: () => void }) {
         </form>
       </CardBody>
     </Card>
+  );
+}
+
+interface ImportBatch {
+  id: string;
+  filename: string;
+  total_rows: number;
+  success_count: number;
+  fail_count: number;
+  created_at: string;
+}
+
+interface ImportRow {
+  row_number: number;
+  room_id_raw: string;
+  student_email_raw: string;
+  status: string;
+  error_message: string;
+  allocation_id: string | null;
+}
+
+function ImportLogs() {
+  const [batches, setBatches] = useState<ImportBatch[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [rows, setRows] = useState<ImportRow[]>([]);
+  const [rowsLoading, setRowsLoading] = useState(false);
+
+  const loadBatches = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await api.get("/api/v1/hostel/allocations/import-logs");
+      setBatches(listItems<ImportBatch>(data));
+    } catch (e) {
+      setError(errMsg(e));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadBatches();
+  }, [loadBatches]);
+
+  async function viewBatch(id: string) {
+    setSelectedId(id);
+    setRowsLoading(true);
+    try {
+      const data = await api.get<{ rows: ImportRow[] }>(`/api/v1/hostel/allocations/import-logs/${id}`);
+      setRows(data.rows ?? []);
+    } finally {
+      setRowsLoading(false);
+    }
+  }
+
+  return (
+    <DataPanel
+      title="Import logs"
+      loading={loading}
+      error={error}
+      isEmpty={batches.length === 0}
+      emptyLabel="No bulk imports yet."
+    >
+      <Table>
+        <THead>
+          <HeaderRow>
+            <TH>File</TH>
+            <TH>Uploaded</TH>
+            <TH>Success</TH>
+            <TH>Failed</TH>
+            <TH />
+          </HeaderRow>
+        </THead>
+        <TBody>
+          {batches.map((b) => (
+            <Row key={b.id}>
+              <TD className="font-medium">{b.filename}</TD>
+              <TD className="text-muted">{new Date(b.created_at).toLocaleString()}</TD>
+              <TD>{b.success_count}</TD>
+              <TD>{b.fail_count}</TD>
+              <TD>
+                <Button variant="ghost" size="sm" onClick={() => viewBatch(b.id)}>
+                  View
+                </Button>
+              </TD>
+            </Row>
+          ))}
+        </TBody>
+      </Table>
+
+      {selectedId &&
+        (rowsLoading ? (
+          <p className="mt-4 text-[13px] text-muted">Loading…</p>
+        ) : (
+          <Table>
+            <THead>
+              <HeaderRow>
+                <TH>Row</TH>
+                <TH>Room ID</TH>
+                <TH>Student email</TH>
+                <TH>Status</TH>
+                <TH>Error</TH>
+              </HeaderRow>
+            </THead>
+            <TBody>
+              {rows.map((r) => (
+                <Row key={r.row_number}>
+                  <TD>{r.row_number}</TD>
+                  <TD className="font-mono text-[12px]">{r.room_id_raw}</TD>
+                  <TD>{r.student_email_raw}</TD>
+                  <TD>
+                    <StatusPill status={r.status} />
+                  </TD>
+                  <TD className="text-muted">{r.error_message}</TD>
+                </Row>
+              ))}
+            </TBody>
+          </Table>
+        ))}
+    </DataPanel>
   );
 }
 

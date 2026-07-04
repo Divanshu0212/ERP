@@ -131,4 +131,54 @@ describe("WardenDashboard", () => {
       await screen.findByText(/2 succeeded, 1 failed out of 3/),
     ).toBeInTheDocument();
   });
+
+  it("shows import logs and drills into a batch's rows", async () => {
+    get.mockImplementation((path: string) => {
+      if (path.includes("/import-logs/batch-1")) {
+        return Promise.resolve({
+          id: "batch-1",
+          filename: "import.csv",
+          total_rows: 1,
+          success_count: 0,
+          fail_count: 1,
+          created_at: "2026-01-01T00:00:00Z",
+          rows: [
+            {
+              row_number: 1,
+              room_id_raw: "rm-9",
+              student_email_raw: "bad@example.com",
+              status: "failed",
+              error_message: "No user found with email bad@example.com.",
+              allocation_id: null,
+            },
+          ],
+        });
+      }
+      if (path.includes("/import-logs")) {
+        return Promise.resolve({
+          items: [
+            {
+              id: "batch-1",
+              filename: "import.csv",
+              total_rows: 1,
+              success_count: 0,
+              fail_count: 1,
+              created_at: "2026-01-01T00:00:00Z",
+            },
+          ],
+          total: 1,
+        });
+      }
+      return Promise.resolve({ items: [], total: 0 });
+    });
+
+    render(<WardenDashboard />);
+
+    expect(await screen.findByText("import.csv")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "View" }));
+
+    expect(
+      await screen.findByText("No user found with email bad@example.com."),
+    ).toBeInTheDocument();
+  });
 });
