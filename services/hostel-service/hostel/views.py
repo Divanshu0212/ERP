@@ -24,9 +24,15 @@ from django.db.models import F
 from django.http import Http404
 from hostel.lookups import LookupFailed, resolve_user_by_email
 from hostel.models import Allocation, AllocationImportBatch, AllocationImportRow, Room
-from hostel.serializers import AllocateRequestSerializer, AllocationSerializer, RoomSerializer
+from hostel.serializers import (
+    AllocateRequestSerializer,
+    AllocationImportBatchDetailSerializer,
+    AllocationImportBatchSerializer,
+    AllocationSerializer,
+    RoomSerializer,
+)
 from hostel.services import RoomFullError, create_allocation
-from rest_framework.generics import ListAPIView
+from rest_framework.generics import ListAPIView, RetrieveAPIView
 from rest_framework.parsers import MultiPartParser
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.views import APIView
@@ -56,6 +62,40 @@ class AllocationListView(ListAPIView):
 
     def get_queryset(self):
         return Allocation.objects.all().order_by("-created_at")
+
+
+class AllocationImportLogListView(ListAPIView):
+    """GET /api/v1/hostel/allocations/import-logs — tenant-scoped, paginated."""
+
+    serializer_class = AllocationImportBatchSerializer
+    permission_classes = [role_required("warden", "admin")]
+
+    def get_queryset(self):
+        return AllocationImportBatch.objects.all()
+
+
+class AllocationImportLogDetailView(RetrieveAPIView):
+    """GET /api/v1/hostel/allocations/import-logs/<id> — batch + its rows.
+
+    ``get_queryset()`` is overridden (rather than a class-level ``queryset``
+    attribute) so the tenant-scoping manager re-evaluates per request. A
+    class-level ``AllocationImportBatch.objects.all()`` would be evaluated
+    once — whenever ``hostel.views`` is first imported, which happens mid
+    request the first time any hostel URL is dispatched — freezing the
+    tenant filter to whatever tenant was active at that moment and leaking
+    across every later request from a different tenant.
+    """
+
+    serializer_class = AllocationImportBatchDetailSerializer
+    permission_classes = [role_required("warden", "admin")]
+
+    def get_queryset(self):
+        return AllocationImportBatch.objects.all()
+
+    def retrieve(self, request, *args, **kwargs):
+        instance = self.get_object()
+        serializer = self.get_serializer(instance)
+        return ok(serializer.data)
 
 
 class AllocateView(APIView):
