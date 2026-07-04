@@ -28,7 +28,7 @@ interface User {
   date_joined: string;
 }
 
-const ROLES = ["student", "faculty", "warden", "driver", "admin", "alumni"] as const;
+const ROLES = ["student", "faculty", "warden", "driver", "canteen_owner", "admin", "alumni"] as const;
 type Role = (typeof ROLES)[number];
 
 interface StatDef {
@@ -165,6 +165,8 @@ function AdminContent() {
         ))}
       </div>
 
+      <CreateInvoice onCreated={loadCrossStats} />
+
       <DataPanel
         title="Users"
         loading={usersLoading}
@@ -244,6 +246,82 @@ function AdminContent() {
         </CardBody>
       </Card>
     </div>
+  );
+}
+
+function CreateInvoice({ onCreated }: { onCreated: () => void }) {
+  const [studentId, setStudentId] = useState("");
+  const [amount, setAmount] = useState("");
+  const [purpose, setPurpose] = useState("");
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [ok, setOk] = useState<string | null>(null);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    setPending(true);
+    setError(null);
+    setOk(null);
+    try {
+      await api.post("/api/v1/finance/invoices", {
+        student_id: studentId,
+        amount,
+        purpose,
+      });
+      setOk("Invoice created.");
+      setStudentId("");
+      setAmount("");
+      setPurpose("");
+      onCreated();
+    } catch (err) {
+      setError(fieldErrorMessage(err) ?? errMsg(err));
+    } finally {
+      setPending(false);
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader title="Create invoice" />
+      <CardBody>
+        <form onSubmit={submit} className="space-y-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <Field label="Student ID" htmlFor="inv-student">
+              <Input
+                id="inv-student"
+                value={studentId}
+                onChange={(e) => setStudentId(e.target.value)}
+                required
+              />
+            </Field>
+            <Field label="Amount" htmlFor="inv-amount">
+              <Input
+                id="inv-amount"
+                type="number"
+                min={0}
+                step="0.01"
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                required
+              />
+            </Field>
+            <Field label="Purpose" htmlFor="inv-purpose">
+              <Input
+                id="inv-purpose"
+                value={purpose}
+                onChange={(e) => setPurpose(e.target.value)}
+                required
+              />
+            </Field>
+          </div>
+          {error && <Alert tone="error">{error}</Alert>}
+          {ok && <Alert tone="success">{ok}</Alert>}
+          <Button type="submit" loading={pending}>
+            Create invoice
+          </Button>
+        </form>
+      </CardBody>
+    </Card>
   );
 }
 

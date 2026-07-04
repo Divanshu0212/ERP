@@ -6,10 +6,13 @@ import { usePathname, useRouter } from "next/navigation";
 import {
   Building2,
   CreditCard,
+  GraduationCap,
   LayoutDashboard,
   LogOut,
   Menu,
   MessageSquareWarning,
+  Bus,
+  UtensilsCrossed,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
@@ -32,12 +35,16 @@ interface NavItem {
 const NAV: Record<string, NavItem[]> = {
   student: [
     { label: "Overview", href: "/student", icon: LayoutDashboard },
+    { label: "Canteen", href: "/canteen", icon: UtensilsCrossed },
     { label: "Pay & confirm", href: "/student/saga-demo", icon: CreditCard },
     { label: "Raise grievance", href: "/student/escalation-demo", icon: MessageSquareWarning },
   ],
   warden: [{ label: "Overview", href: "/warden", icon: LayoutDashboard }],
   admin: [{ label: "Overview", href: "/admin", icon: LayoutDashboard }],
   superadmin: [{ label: "Institutions", href: "/superadmin", icon: Building2 }],
+  faculty: [{ label: "Overview", href: "/faculty", icon: GraduationCap }],
+  driver: [{ label: "My schedules", href: "/driver", icon: Bus }],
+  canteen_owner: [{ label: "Canteen", href: "/canteen-owner", icon: UtensilsCrossed }],
 };
 
 interface Institution {
