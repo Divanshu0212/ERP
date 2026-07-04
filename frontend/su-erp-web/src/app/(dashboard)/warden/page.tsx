@@ -100,6 +100,7 @@ function WardenContent() {
     <div className="space-y-6">
       <CreateAllocation
         rooms={rooms}
+        roomsLoading={roomsLoading}
         onCreated={() => {
           void loadAllocations();
           void loadRooms();
@@ -178,7 +179,15 @@ function WardenContent() {
   );
 }
 
-function CreateAllocation({ rooms, onCreated }: { rooms: Room[]; onCreated: () => void }) {
+function CreateAllocation({
+  rooms,
+  roomsLoading,
+  onCreated,
+}: {
+  rooms: Room[];
+  roomsLoading: boolean;
+  onCreated: () => void;
+}) {
   const [roomId, setRoomId] = useState("");
   const [studentEmail, setStudentEmail] = useState("");
   const [pending, setPending] = useState(false);
@@ -217,6 +226,7 @@ function CreateAllocation({ rooms, onCreated }: { rooms: Room[]; onCreated: () =
                 id="alloc-room"
                 value={roomId}
                 onChange={(e) => setRoomId(e.target.value)}
+                disabled={roomsLoading}
                 required
               >
                 <option value="" disabled>
