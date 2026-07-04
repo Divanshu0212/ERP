@@ -9,7 +9,7 @@ Allocation relations.
 import uuid
 
 import pytest
-from hostel.models import Allocation, Block, Room
+from hostel.models import Allocation, AllocationImportBatch, AllocationImportRow, Block, Room
 from suerp_common.tenancy import set_current_tenant
 
 pytestmark = pytest.mark.django_db
@@ -95,3 +95,45 @@ def test_room_attaches_to_block():
     block = _make_block(tenant_id)
     _make_room(tenant_id, block=block)
     assert block.rooms.count() == 1
+
+
+def test_import_batch_and_row_creation():
+    tenant_id = uuid.uuid4()
+    block = Block.all_objects.create(
+        tenant_id=tenant_id, name="Block A", gender_type="M", warden_id=uuid.uuid4()
+    )
+    room = Room.all_objects.create(tenant_id=tenant_id, block=block, room_no="101", capacity=2)
+    allocation = Allocation.all_objects.create(
+        tenant_id=tenant_id, room=room, student_id=uuid.uuid4(), status=Allocation.Status.PENDING
+    )
+
+    batch = AllocationImportBatch.all_objects.create(
+        tenant_id=tenant_id,
+        uploaded_by=uuid.uuid4(),
+        filename="import.csv",
+        total_rows=2,
+        success_count=1,
+        fail_count=1,
+    )
+    success_row = AllocationImportRow.all_objects.create(
+        tenant_id=tenant_id,
+        batch=batch,
+        row_number=1,
+        room_id_raw=str(room.id),
+        student_email_raw="a@example.com",
+        status=AllocationImportRow.Status.SUCCESS,
+        allocation=allocation,
+    )
+    failed_row = AllocationImportRow.all_objects.create(
+        tenant_id=tenant_id,
+        batch=batch,
+        row_number=2,
+        room_id_raw="not-a-uuid",
+        student_email_raw="bad@example.com",
+        status=AllocationImportRow.Status.FAILED,
+        error_message="Room not found.",
+    )
+
+    assert list(batch.rows.order_by("row_number")) == [success_row, failed_row]
+    assert success_row.allocation_id == allocation.id
+    assert failed_row.allocation is None
