@@ -7,7 +7,7 @@ uniqueness/idempotency/atomic-commit logic lives in
 
 from rest_framework import serializers
 
-from .models import Booking, Route
+from .models import Booking, BusSchedule, Route
 
 
 class RouteSerializer(serializers.ModelSerializer):
@@ -15,6 +15,38 @@ class RouteSerializer(serializers.ModelSerializer):
         model = Route
         fields = ["id", "name", "start_point", "end_point", "created_at"]
         read_only_fields = fields
+
+
+class _RouteNestedSerializer(serializers.ModelSerializer):
+    """Compact route summary nested inside a schedule."""
+
+    class Meta:
+        model = Route
+        fields = ["id", "name", "start_point", "end_point"]
+        read_only_fields = fields
+
+
+class BusScheduleSerializer(serializers.ModelSerializer):
+    """A driver's (or admin's) view of a bus schedule, with live booked count."""
+
+    route = _RouteNestedSerializer(read_only=True)
+    booked_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model = BusSchedule
+        fields = [
+            "id",
+            "route",
+            "bus_no",
+            "driver_id",
+            "departure_time",
+            "capacity",
+            "booked_count",
+        ]
+        read_only_fields = fields
+
+    def get_booked_count(self, obj) -> int:
+        return obj.bookings.filter(status="booked").count()
 
 
 class BookingRequestSerializer(serializers.Serializer):

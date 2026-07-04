@@ -85,6 +85,7 @@ class User(AbstractBaseUser, PermissionsMixin):
         ADMIN = "admin", "Admin"
         ALUMNI = "alumni", "Alumni"
         SUPERADMIN = "superadmin", "Super Admin"
+        CANTEEN_OWNER = "canteen_owner", "Canteen Owner"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     tenant = models.ForeignKey(Institution, on_delete=models.PROTECT, related_name="users")

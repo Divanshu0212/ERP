@@ -24,9 +24,11 @@ from billing.serializers import InvoiceCreateSerializer, InvoiceSerializer, PayS
 from django.db import transaction
 from django.shortcuts import get_object_or_404
 from rest_framework.generics import ListAPIView
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.views import APIView
 from suerp_common.envelope import fail, ok
 from suerp_common.outbox import publish_event
+from suerp_common.permissions import role_required
 
 
 class InvoiceListCreateView(ListAPIView):
@@ -38,6 +40,14 @@ class InvoiceListCreateView(ListAPIView):
     """
 
     serializer_class = InvoiceSerializer
+
+    def get_permissions(self):
+        # GET: any authenticated user may list (tenant-scoped). POST: admin only
+        # — invoices are normally created from upstream events, direct creation
+        # is an admin/operator action.
+        if self.request.method == "POST":
+            return [role_required("admin")()]
+        return [IsAuthenticated()]
 
     def get_queryset(self):
         return Invoice.objects.all().order_by("-created_at")
