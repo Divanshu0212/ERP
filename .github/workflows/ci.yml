@@ -13,7 +13,7 @@ concurrency:
 
 env:
   PYTHON_VERSION: "3.12"
-  NODE_VERSION: "20"
+  NODE_VERSION: "24"
 
 jobs:
   # ---------------------------------------------------------------------------
@@ -112,17 +112,21 @@ jobs:
       JWT_SIGNING_KEY: ci-test-signing-key-not-secret
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v3
+        uses: astral-sh/setup-uv@v8
         with:
           enable-cache: true
+          cache-dependency-glob: |
+            pyproject.toml
+            shared/libs/suerp_common/pyproject.toml
+            services/*/requirements.txt
 
       - name: Install lint + coverage tooling
         run: uv pip install --system ruff black isort pytest-cov
@@ -157,15 +161,19 @@ jobs:
     env:
       JWT_SIGNING_KEY: ci-test-signing-key-not-secret
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: ${{ env.PYTHON_VERSION }}
       - name: Install uv
-        uses: astral-sh/setup-uv@v3
+        uses: astral-sh/setup-uv@v8
         with:
           enable-cache: true
+          cache-dependency-glob: |
+            pyproject.toml
+            shared/libs/suerp_common/pyproject.toml
+            services/*/requirements.txt
       - name: Install shared lib + tooling
         run: |
           uv pip install --system ruff black isort pytest-cov
@@ -189,15 +197,19 @@ jobs:
     name: security
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: ${{ env.PYTHON_VERSION }}
       - name: Install uv
-        uses: astral-sh/setup-uv@v3
+        uses: astral-sh/setup-uv@v8
         with:
           enable-cache: true
+          cache-dependency-glob: |
+            pyproject.toml
+            shared/libs/suerp_common/pyproject.toml
+            services/*/requirements.txt
       - name: Install security tooling
         run: uv pip install --system bandit pip-audit
       # -ll = report medium+ severity (skip low noise); skip test files.
@@ -235,11 +247,11 @@ jobs:
           - { name: transport-service, context: services/transport-service }
           - { name: gateway, context: gateway }
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
       - name: Build image (no push)
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           # Django services install `-e ../../shared/libs/suerp_common`, so their
           # build context must be the repo root. ai-service and the gateway are
@@ -262,9 +274,9 @@ jobs:
       run:
         working-directory: frontend/su-erp-web
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Set up Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
