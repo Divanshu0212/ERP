@@ -4,6 +4,7 @@ django-environ
 dj-database-url
 psycopg[binary]
 razorpay
+gunicorn
 -e ../../shared/libs/suerp_common
 
 # Test tooling

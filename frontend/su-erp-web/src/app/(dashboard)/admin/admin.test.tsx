@@ -131,14 +131,14 @@ describe("AdminDashboard", () => {
     render(<AdminDashboard />);
     await screen.findByText("alice@acme.edu");
 
-    fireEvent.change(screen.getByLabelText("Student ID"), { target: { value: "stu-3" } });
+    fireEvent.change(screen.getByLabelText("Student email"), { target: { value: "alice@acme.edu" } });
     fireEvent.change(screen.getByLabelText("Amount"), { target: { value: "500" } });
     fireEvent.change(screen.getByLabelText("Purpose"), { target: { value: "Hostel fee" } });
     fireEvent.click(screen.getByRole("button", { name: "Create invoice" }));
 
     await waitFor(() =>
       expect(post).toHaveBeenCalledWith("/api/v1/finance/invoices", {
-        student_id: "stu-3",
+        student_id: "u1",
         amount: "500",
         purpose: "Hostel fee",
       }),

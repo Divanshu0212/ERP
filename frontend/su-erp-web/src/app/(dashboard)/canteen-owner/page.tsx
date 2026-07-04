@@ -99,6 +99,17 @@ function MenuSection() {
     }
   }
 
+  async function deleteItem(id: string, name: string) {
+    if (!window.confirm(`Delete "${name}"? This cannot be undone.`)) return;
+    setRowError(null);
+    try {
+      await api.delete(`/api/v1/menu-items/${id}/`);
+      setItems((prev) => prev.filter((m) => m.id !== id));
+    } catch (e) {
+      setRowError(errMsg(e));
+    }
+  }
+
   async function createItem(e: React.FormEvent) {
     e.preventDefault();
     setPending(true);
@@ -154,13 +165,18 @@ function MenuSection() {
                   <StatusPill status={m.available ? "available" : "unavailable"} tone={m.available ? "success" : "neutral"} />
                 </TD>
                 <TD className="text-right">
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    onClick={() => patchItem(m.id, { available: !m.available })}
-                  >
-                    {m.available ? "Mark unavailable" : "Mark available"}
-                  </Button>
+                  <div className="flex justify-end gap-2">
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => patchItem(m.id, { available: !m.available })}
+                    >
+                      {m.available ? "Mark unavailable" : "Mark available"}
+                    </Button>
+                    <Button size="sm" variant="danger" onClick={() => deleteItem(m.id, m.name)}>
+                      Delete
+                    </Button>
+                  </div>
                 </TD>
               </Row>
             ))}

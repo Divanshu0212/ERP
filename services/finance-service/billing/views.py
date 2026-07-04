@@ -88,7 +88,7 @@ class RazorpayOrderView(APIView):
         if not razorpay_gateway.is_configured():
             return fail("Razorpay is not configured on this server.", status=400)
 
-        order = razorpay_gateway.create_order(invoice.amount, receipt=f"invoice-{invoice.id}")
+        order = razorpay_gateway.create_order(invoice.amount, receipt=f"inv-{invoice.id}")
         return ok(order, message="Razorpay order created.")
 
 
