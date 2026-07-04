@@ -62,6 +62,8 @@ def resolve_user_by_email(email: str, auth_header: str | None) -> dict:
         raise LookupFailed("unavailable", "Invalid response from auth-service.") from exc
 
     if not envelope.get("success"):
-        raise LookupFailed("not_found", envelope.get("message") or f"No user found with email {email}.")
+        raise LookupFailed(
+            "not_found", envelope.get("message") or f"No user found with email {email}."
+        )
 
     return envelope["data"]

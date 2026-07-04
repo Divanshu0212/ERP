@@ -69,7 +69,11 @@ def test_allocating_available_room_creates_pending_allocation_and_emits_event(mo
     tenant_id = uuid.uuid4()
     room = _make_room(tenant_id, capacity=2, occupied_count=0)
     student_id = uuid.uuid4()
-    mock_resolve.return_value = {"id": str(student_id), "email": "student@example.com", "role": "student"}
+    mock_resolve.return_value = {
+        "id": str(student_id),
+        "email": "student@example.com",
+        "role": "student",
+    }
     client = _auth_client(tenant_id, role="warden")
 
     response = client.post(
@@ -109,7 +113,11 @@ def test_allocating_available_room_creates_pending_allocation_and_emits_event(mo
 def test_allocating_full_room_returns_400_and_creates_nothing(mock_resolve):
     tenant_id = uuid.uuid4()
     room = _make_room(tenant_id, capacity=2, occupied_count=2)
-    mock_resolve.return_value = {"id": str(uuid.uuid4()), "email": "student@example.com", "role": "student"}
+    mock_resolve.return_value = {
+        "id": str(uuid.uuid4()),
+        "email": "student@example.com",
+        "role": "student",
+    }
     client = _auth_client(tenant_id, role="warden")
 
     response = client.post(
@@ -152,7 +160,11 @@ def test_warden_cannot_allocate_room_from_a_different_tenant(mock_resolve):
     tenant_a = uuid.uuid4()
     tenant_b = uuid.uuid4()
     room = _make_room(tenant_a, capacity=2, occupied_count=0)
-    mock_resolve.return_value = {"id": str(uuid.uuid4()), "email": "student@example.com", "role": "student"}
+    mock_resolve.return_value = {
+        "id": str(uuid.uuid4()),
+        "email": "student@example.com",
+        "role": "student",
+    }
     client_b = _auth_client(tenant_b, role="warden")
 
     response = client_b.post(

@@ -28,7 +28,15 @@ class RoomSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Room
-        fields = ["id", "block", "block_name", "room_no", "capacity", "occupied_count", "is_available"]
+        fields = [
+            "id",
+            "block",
+            "block_name",
+            "room_no",
+            "capacity",
+            "occupied_count",
+            "is_available",
+        ]
         read_only_fields = fields
 
 
@@ -56,7 +64,14 @@ class AllocationImportRowSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = AllocationImportRow
-        fields = ["row_number", "room_id_raw", "student_email_raw", "status", "error_message", "allocation_id"]
+        fields = [
+            "row_number",
+            "room_id_raw",
+            "student_email_raw",
+            "status",
+            "error_message",
+            "allocation_id",
+        ]
         read_only_fields = fields
 
     def get_allocation_id(self, obj):

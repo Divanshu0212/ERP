@@ -295,7 +295,9 @@ class AllocateBulkView(APIView):
                     raise ValueError("room_id and student_email are both required.")
 
                 if student_email_raw not in email_cache:
-                    email_cache[student_email_raw] = resolve_user_by_email(student_email_raw, auth_header)
+                    email_cache[student_email_raw] = resolve_user_by_email(
+                        student_email_raw, auth_header
+                    )
                 student = email_cache[student_email_raw]
 
                 room_uuid = uuid_lib.UUID(room_id_raw)
@@ -320,7 +322,11 @@ class AllocateBulkView(APIView):
                 row_number=row_number,
                 room_id_raw=room_id_raw,
                 student_email_raw=student_email_raw,
-                status=AllocationImportRow.Status.SUCCESS if allocation else AllocationImportRow.Status.FAILED,
+                status=(
+                    AllocationImportRow.Status.SUCCESS
+                    if allocation
+                    else AllocationImportRow.Status.FAILED
+                ),
                 error_message=error_message,
                 allocation=allocation,
             )
