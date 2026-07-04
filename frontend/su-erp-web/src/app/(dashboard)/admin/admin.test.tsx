@@ -124,6 +124,28 @@ describe("AdminDashboard", () => {
     expect(screen.getByText(/Created user bob@acme.edu/)).toBeInTheDocument();
   });
 
+  it("creates an invoice and shows a success message", async () => {
+    get.mockImplementation(defaultGet);
+    post.mockResolvedValue({ id: "inv-1", status: "pending" });
+
+    render(<AdminDashboard />);
+    await screen.findByText("alice@acme.edu");
+
+    fireEvent.change(screen.getByLabelText("Student ID"), { target: { value: "stu-3" } });
+    fireEvent.change(screen.getByLabelText("Amount"), { target: { value: "500" } });
+    fireEvent.change(screen.getByLabelText("Purpose"), { target: { value: "Hostel fee" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create invoice" }));
+
+    await waitFor(() =>
+      expect(post).toHaveBeenCalledWith("/api/v1/finance/invoices", {
+        student_id: "stu-3",
+        amount: "500",
+        purpose: "Hostel fee",
+      }),
+    );
+    expect(await screen.findByText("Invoice created.")).toBeInTheDocument();
+  });
+
   it("shows the envelope error when creating a user fails", async () => {
     get.mockImplementation(defaultGet);
     post.mockRejectedValue(new ApiError("User with this email already exists.", 400));

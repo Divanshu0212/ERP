@@ -6,6 +6,11 @@ import { DashboardShell } from "@/components/DashboardShell";
 import { DataPanel } from "@/components/DataPanel";
 import { api, ApiError } from "@/lib/api";
 import { listItems } from "@/lib/paginate";
+import { Card, CardBody, CardHeader } from "@/components/ui/Card";
+import { Button } from "@/components/ui/Button";
+import { Field } from "@/components/ui/Field";
+import { Input } from "@/components/ui/Input";
+import { Alert } from "@/components/ui/Alert";
 import { StatusPill } from "@/components/ui/StatusPill";
 import { Table, TBody, TD, TH, THead, HeaderRow, Row } from "@/components/ui/Table";
 
@@ -70,6 +75,8 @@ function WardenContent() {
 
   return (
     <div className="space-y-6">
+      <CreateAllocation onCreated={loadAllocations} />
+
       <DataPanel
         title="Pending hostel allocations"
         loading={allocLoading}
@@ -130,6 +137,68 @@ function WardenContent() {
         </Table>
       </DataPanel>
     </div>
+  );
+}
+
+function CreateAllocation({ onCreated }: { onCreated: () => void }) {
+  const [roomId, setRoomId] = useState("");
+  const [studentId, setStudentId] = useState("");
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [ok, setOk] = useState<string | null>(null);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    setPending(true);
+    setError(null);
+    setOk(null);
+    try {
+      await api.post("/api/v1/hostel/allocate", {
+        room_id: roomId,
+        student_id: studentId,
+      });
+      setOk("Allocation created.");
+      setRoomId("");
+      setStudentId("");
+      onCreated();
+    } catch (err) {
+      setError(errMsg(err));
+    } finally {
+      setPending(false);
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader title="Create allocation" />
+      <CardBody>
+        <form onSubmit={submit} className="space-y-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <Field label="Room ID" htmlFor="alloc-room">
+              <Input
+                id="alloc-room"
+                value={roomId}
+                onChange={(e) => setRoomId(e.target.value)}
+                required
+              />
+            </Field>
+            <Field label="Student ID" htmlFor="alloc-student">
+              <Input
+                id="alloc-student"
+                value={studentId}
+                onChange={(e) => setStudentId(e.target.value)}
+                required
+              />
+            </Field>
+          </div>
+          {error && <Alert tone="error">{error}</Alert>}
+          {ok && <Alert tone="success">{ok}</Alert>}
+          <Button type="submit" loading={pending}>
+            Create allocation
+          </Button>
+        </form>
+      </CardBody>
+    </Card>
   );
 }
 
