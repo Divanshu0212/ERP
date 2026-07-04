@@ -16,6 +16,7 @@ indistinguishable from one auth-service would have issued.
 """
 
 import uuid
+from unittest.mock import patch
 
 import jwt
 import pytest
@@ -63,15 +64,17 @@ def _make_room(tenant_id, capacity=2, occupied_count=0, room_no="101"):
     )
 
 
-def test_allocating_available_room_creates_pending_allocation_and_emits_event():
+@patch("hostel.views.resolve_user_by_email")
+def test_allocating_available_room_creates_pending_allocation_and_emits_event(mock_resolve):
     tenant_id = uuid.uuid4()
     room = _make_room(tenant_id, capacity=2, occupied_count=0)
     student_id = uuid.uuid4()
+    mock_resolve.return_value = {"id": str(student_id), "email": "student@example.com", "role": "student"}
     client = _auth_client(tenant_id, role="warden")
 
     response = client.post(
         "/api/v1/hostel/allocate",
-        {"room_id": str(room.id), "student_id": str(student_id)},
+        {"room_id": str(room.id), "student_email": "student@example.com"},
         format="json",
     )
 
@@ -81,6 +84,7 @@ def test_allocating_available_room_creates_pending_allocation_and_emits_event():
     assert body["data"]["status"] == "pending"
     assert body["data"]["room_id"] == str(room.id)
     assert body["data"]["student_id"] == str(student_id)
+    mock_resolve.assert_called_once()
 
     allocations = Allocation.all_objects.filter(room=room, student_id=student_id)
     assert allocations.count() == 1
@@ -101,15 +105,16 @@ def test_allocating_available_room_creates_pending_allocation_and_emits_event():
     }
 
 
-def test_allocating_full_room_returns_400_and_creates_nothing():
+@patch("hostel.views.resolve_user_by_email")
+def test_allocating_full_room_returns_400_and_creates_nothing(mock_resolve):
     tenant_id = uuid.uuid4()
     room = _make_room(tenant_id, capacity=2, occupied_count=2)
-    student_id = uuid.uuid4()
+    mock_resolve.return_value = {"id": str(uuid.uuid4()), "email": "student@example.com", "role": "student"}
     client = _auth_client(tenant_id, role="warden")
 
     response = client.post(
         "/api/v1/hostel/allocate",
-        {"room_id": str(room.id), "student_id": str(student_id)},
+        {"room_id": str(room.id), "student_email": "student@example.com"},
         format="json",
     )
 
@@ -133,7 +138,7 @@ def test_student_role_cannot_allocate():
 
     response = client.post(
         "/api/v1/hostel/allocate",
-        {"room_id": str(room.id), "student_id": str(uuid.uuid4())},
+        {"room_id": str(room.id), "student_email": "student@example.com"},
         format="json",
     )
 
@@ -142,15 +147,17 @@ def test_student_role_cannot_allocate():
     assert OutboxEvent.objects.count() == 0
 
 
-def test_warden_cannot_allocate_room_from_a_different_tenant():
+@patch("hostel.views.resolve_user_by_email")
+def test_warden_cannot_allocate_room_from_a_different_tenant(mock_resolve):
     tenant_a = uuid.uuid4()
     tenant_b = uuid.uuid4()
     room = _make_room(tenant_a, capacity=2, occupied_count=0)
+    mock_resolve.return_value = {"id": str(uuid.uuid4()), "email": "student@example.com", "role": "student"}
     client_b = _auth_client(tenant_b, role="warden")
 
     response = client_b.post(
         "/api/v1/hostel/allocate",
-        {"room_id": str(room.id), "student_id": str(uuid.uuid4())},
+        {"room_id": str(room.id), "student_email": "student@example.com"},
         format="json",
     )
 
@@ -179,3 +186,41 @@ def test_available_rooms_lists_only_rooms_with_capacity_tenant_scoped():
     results = response.data["data"]["results"]
     returned_ids = {r["id"] for r in results}
     assert returned_ids == {str(open_room.id)}
+
+
+@patch("hostel.views.resolve_user_by_email")
+def test_allocate_returns_400_when_email_not_found(mock_resolve):
+    from hostel.lookups import LookupFailed
+
+    tenant_id = uuid.uuid4()
+    room = _make_room(tenant_id, capacity=2, occupied_count=0)
+    mock_resolve.side_effect = LookupFailed("not_found", "No user found with email x@example.com.")
+    client = _auth_client(tenant_id, role="warden")
+
+    response = client.post(
+        "/api/v1/hostel/allocate",
+        {"room_id": str(room.id), "student_email": "x@example.com"},
+        format="json",
+    )
+
+    assert response.status_code == 400
+    assert Allocation.all_objects.filter(room=room).count() == 0
+
+
+@patch("hostel.views.resolve_user_by_email")
+def test_allocate_returns_502_when_lookup_service_unavailable(mock_resolve):
+    from hostel.lookups import LookupFailed
+
+    tenant_id = uuid.uuid4()
+    room = _make_room(tenant_id, capacity=2, occupied_count=0)
+    mock_resolve.side_effect = LookupFailed("unavailable", "auth-service returned 500.")
+    client = _auth_client(tenant_id, role="warden")
+
+    response = client.post(
+        "/api/v1/hostel/allocate",
+        {"room_id": str(room.id), "student_email": "x@example.com"},
+        format="json",
+    )
+
+    assert response.status_code == 502
+    assert Allocation.all_objects.filter(room=room).count() == 0

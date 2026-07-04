@@ -10,7 +10,7 @@ from rest_framework import serializers
 
 class AllocateRequestSerializer(serializers.Serializer):
     room_id = serializers.UUIDField()
-    student_id = serializers.UUIDField()
+    student_email = serializers.EmailField()
 
 
 class AllocationSerializer(serializers.ModelSerializer):
