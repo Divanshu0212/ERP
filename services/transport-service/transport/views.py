@@ -17,13 +17,21 @@ No event is published — a booking is terminal for now.
 """
 
 from django.db import IntegrityError, transaction
+from django.shortcuts import get_object_or_404
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.generics import ListAPIView
 from rest_framework.views import APIView
 from suerp_common.envelope import fail, ok
+from suerp_common.permissions import role_required
 from suerp_common.tenancy import get_current_tenant
 
 from .models import Booking, BusSchedule, Route
-from .serializers import BookingRequestSerializer, BookingSerializer, RouteSerializer
+from .serializers import (
+    BookingRequestSerializer,
+    BookingSerializer,
+    BusScheduleSerializer,
+    RouteSerializer,
+)
 from .services import get_available_seats, invalidate_seats
 
 
@@ -115,3 +123,38 @@ class BookingCreateView(APIView):
 
         invalidate_seats(tenant_id, schedule.id)
         return ok(BookingSerializer(booking).data, message="Booking created.", status=201)
+
+
+class DriverScheduleListView(ListAPIView):
+    """GET /api/v1/transport/schedules/mine — schedules for the acting driver.
+
+    A driver sees only their own schedules (``driver_id == JWT sub``); an admin
+    sees every schedule in the tenant.
+    """
+
+    serializer_class = BusScheduleSerializer
+    permission_classes = [role_required("driver", "admin")]
+
+    def get_queryset(self):
+        qs = BusSchedule.objects.select_related("route").order_by("departure_time")
+        if getattr(self.request.user, "role", None) != "admin":
+            qs = qs.filter(driver_id=self.request.user.id)
+        return qs
+
+
+class ScheduleBookingsView(ListAPIView):
+    """GET /api/v1/transport/schedules/<schedule_id>/bookings — bookings on a
+    schedule. A driver may only read bookings for a schedule they own (403
+    otherwise); an admin may read any schedule in the tenant."""
+
+    serializer_class = BookingSerializer
+    permission_classes = [role_required("driver", "admin")]
+
+    def get_queryset(self):
+        # ``objects`` is tenant-scoped, so a schedule from another tenant isn't
+        # found -> 404, no cross-tenant leak.
+        schedule = get_object_or_404(BusSchedule, id=self.kwargs["schedule_id"])
+        role = getattr(self.request.user, "role", None)
+        if role != "admin" and str(schedule.driver_id) != str(self.request.user.id):
+            raise PermissionDenied("You do not own this schedule.")
+        return Booking.objects.filter(schedule=schedule).order_by("seat_no")
