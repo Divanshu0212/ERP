@@ -169,3 +169,8 @@ CELERY_BEAT_SCHEDULE = {
 # Read by suerp_common.events via settings.RABBITMQ_URL.
 
 RABBITMQ_URL = env("RABBITMQ_URL", default="amqp://guest:guest@rabbitmq:5672/")
+
+# --- Inter-service HTTP (email lookups) --------------------------------------
+# The only synchronous inter-service call in the Django services: resolving a
+# warden-typed email to its auth-service User.id. See hostel/lookups.py.
+GATEWAY_URL = env("GATEWAY_URL", default="http://gateway:8080")

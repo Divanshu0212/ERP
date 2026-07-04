@@ -28,6 +28,7 @@ x-django-env: &django-env
   # dj_database_url.parse("").
   REDIS_URL: redis://redis:6379/0
   RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
+  GATEWAY_URL: http://gateway:8080
 
 # Common service template for all Django containers (web/celery/consumer).
 x-django-svc: &django-svc
