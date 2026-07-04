@@ -6,6 +6,8 @@ dj-database-url
 celery
 redis
 psycopg[binary]
+requests
+openpyxl
 django-prometheus
 gunicorn
 -e ../../shared/libs/suerp_common
