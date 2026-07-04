@@ -44,6 +44,9 @@ class Order(TenantModel):
     student_id = models.UUIDField()
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.PLACED)
     total = models.DecimalField(max_digits=8, decimal_places=2)
+    # Razorpay payment id when the order was paid through the real gateway;
+    # "" for simulated/dev orders (no payment step). See canteen.views.
+    gateway_ref = models.CharField(max_length=255, blank=True, default="")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

@@ -160,3 +160,9 @@ CELERY_BEAT_SCHEDULE = {
 # Read by suerp_common.events via settings.RABBITMQ_URL.
 
 RABBITMQ_URL = env("RABBITMQ_URL", default="amqp://guest:guest@rabbitmq:5672/")
+
+# --- Razorpay (real test-mode payments) -------------------------------------------
+# Read by suerp_common.razorpay_gateway. Empty defaults -> is_configured() is
+# False and the pay flow falls back to the in-process SimulatedGateway.
+RAZORPAY_KEY_ID = env("RAZORPAY_KEY_ID", default="")
+RAZORPAY_KEY_SECRET = env("RAZORPAY_KEY_SECRET", default="")

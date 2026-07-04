@@ -16,10 +16,12 @@ client-sent price is ignored, and menu items must belong to the caller's tenant
 and be ``available=True`` or the whole order is rejected 400.
 """
 
+import uuid
 from datetime import timedelta
 
 from canteen.models import MenuItem, Order, OrderItem
 from canteen.serializers import (
+    CheckoutSerializer,
     MenuItemSerializer,
     OrderCreateSerializer,
     OrderSerializer,
@@ -32,6 +34,7 @@ from rest_framework.generics import (
 )
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.views import APIView
+from suerp_common import razorpay_gateway
 from suerp_common.envelope import fail, ok
 from suerp_common.permissions import role_required
 
@@ -49,6 +52,50 @@ _ALLOWED_TRANSITIONS = {
     Order.Status.COMPLETED: set(),
     Order.Status.CANCELLED: set(),
 }
+
+
+class _CartError(Exception):
+    """Raised by ``_resolve_cart`` carrying the 400 response to return."""
+
+    def __init__(self, response):
+        self.response = response
+
+
+def _resolve_cart(items):
+    """Validate and price a cart's line items server-side.
+
+    Shared by checkout (prices only) and order creation (prices, then builds
+    the order). Collapses duplicate ``menu_item_id`` lines, verifies every item
+    exists in the caller's tenant and is ``available``, and returns
+    ``(wanted, menu_items, total)``. Raises ``_CartError`` with a 400 response
+    on any missing/unavailable item. Any client-sent price is ignored.
+    """
+    wanted = {}
+    for line in items:
+        wanted[line["menu_item_id"]] = wanted.get(line["menu_item_id"], 0) + line["quantity"]
+
+    # ``objects`` is tenant-scoped, so cross-tenant ids simply aren't found
+    # here — no cross-tenant leak.
+    menu_items = {mi.id: mi for mi in MenuItem.objects.filter(id__in=list(wanted.keys()))}
+
+    missing = [str(mid) for mid in wanted if mid not in menu_items]
+    if missing:
+        raise _CartError(
+            fail("Some menu items were not found.", errors={"menu_item_id": missing}, status=400)
+        )
+
+    unavailable = [str(mid) for mid, mi in menu_items.items() if not mi.available]
+    if unavailable:
+        raise _CartError(
+            fail(
+                "Some menu items are unavailable.",
+                errors={"menu_item_id": unavailable},
+                status=400,
+            )
+        )
+
+    total = sum(menu_items[mid].price * qty for mid, qty in wanted.items())
+    return wanted, menu_items, total
 
 
 class MenuItemListCreateView(ListCreateAPIView):
@@ -115,37 +162,33 @@ class OrderListCreateView(ListCreateAPIView):
             return fail("Invalid order.", errors=in_ser.errors, status=400)
 
         items = in_ser.validated_data["items"]
-        # Collapse duplicate menu_item_ids into summed quantities.
-        wanted = {}
-        for line in items:
-            wanted[line["menu_item_id"]] = wanted.get(line["menu_item_id"], 0) + line["quantity"]
+        order_id = in_ser.validated_data.get("razorpay_order_id")
+        payment_id = in_ser.validated_data.get("razorpay_payment_id")
+        signature = in_ser.validated_data.get("razorpay_signature")
+        has_razorpay_proof = all((order_id, payment_id, signature))
+
+        # Real Razorpay path: verify the client's proof-of-payment before
+        # creating the order. When the fields are absent (simulated/dev/test
+        # mode) verification is skipped and the order is created directly,
+        # exactly as before this payment step existed.
+        gateway_ref = ""
+        if has_razorpay_proof and razorpay_gateway.is_configured():
+            if not razorpay_gateway.verify_signature(order_id, payment_id, signature):
+                return fail("Payment verification failed.", status=400)
+            gateway_ref = payment_id
 
         with transaction.atomic():
-            # ``objects`` is tenant-scoped, so cross-tenant ids simply aren't
-            # found here — no cross-tenant leak.
-            menu_items = {mi.id: mi for mi in MenuItem.objects.filter(id__in=list(wanted.keys()))}
-
-            missing = [str(mid) for mid in wanted if mid not in menu_items]
-            if missing:
-                return fail(
-                    "Some menu items were not found.", errors={"menu_item_id": missing}, status=400
-                )
-
-            unavailable = [str(mid) for mid, mi in menu_items.items() if not mi.available]
-            if unavailable:
-                return fail(
-                    "Some menu items are unavailable.",
-                    errors={"menu_item_id": unavailable},
-                    status=400,
-                )
-
-            total = sum(menu_items[mid].price * qty for mid, qty in wanted.items())
+            try:
+                wanted, menu_items, total = _resolve_cart(items)
+            except _CartError as exc:
+                return exc.response
 
             order = Order.objects.create(
                 tenant_id=request.tenant_id,
                 student_id=request.user.id,
                 status=Order.Status.PLACED,
                 total=total,
+                gateway_ref=gateway_ref,
             )
             OrderItem.objects.bulk_create(
                 [
@@ -161,6 +204,45 @@ class OrderListCreateView(ListCreateAPIView):
             )
 
         return ok(OrderSerializer(order).data, message="Order placed.", status=201)
+
+
+class OrderCheckoutView(APIView):
+    """POST /api/v1/orders/checkout — price a cart and open a Razorpay order.
+
+    Student-only. Validates the cart exactly like order creation (items exist,
+    belong to the tenant, are ``available``) and computes the total
+    server-side, but creates NO Order/OrderItem rows — it only returns what a
+    frontend needs to open the Razorpay checkout widget.
+
+    When Razorpay is configured, returns a real Razorpay order. When it is NOT
+    (local/dev/test), returns a simulated order (``order_id`` prefixed
+    ``SIM-`` and an empty ``key_id``) so the checkout flow can be exercised
+    end-to-end without real credentials.
+    """
+
+    permission_classes = [role_required("student")]
+
+    def post(self, request):
+        in_ser = CheckoutSerializer(data=request.data)
+        if not in_ser.is_valid():
+            return fail("Invalid checkout.", errors=in_ser.errors, status=400)
+
+        try:
+            _wanted, _menu_items, total = _resolve_cart(in_ser.validated_data["items"])
+        except _CartError as exc:
+            return exc.response
+
+        if razorpay_gateway.is_configured():
+            receipt = f"cart-{request.user.id}-{int(timezone.now().timestamp())}"
+            order = razorpay_gateway.create_order(total, receipt=receipt)
+        else:
+            order = {
+                "order_id": f"SIM-{uuid.uuid4()}",
+                "amount": str(total),
+                "currency": "INR",
+                "key_id": "",
+            }
+        return ok(order, message="Checkout order created.")
 
 
 class OrderStatusUpdateView(APIView):

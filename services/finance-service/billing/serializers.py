@@ -24,3 +24,9 @@ class InvoiceCreateSerializer(serializers.ModelSerializer):
 class PaySerializer(serializers.Serializer):
     invoice_id = serializers.UUIDField()
     idempotency_key = serializers.CharField(max_length=255)
+    # Optional Razorpay proof-of-payment. When all three are present the real
+    # verification path runs; when absent the flow falls through to the
+    # in-process SimulatedGateway (backward-compatible default).
+    razorpay_order_id = serializers.CharField(max_length=255, required=False)
+    razorpay_payment_id = serializers.CharField(max_length=255, required=False)
+    razorpay_signature = serializers.CharField(max_length=255, required=False)
