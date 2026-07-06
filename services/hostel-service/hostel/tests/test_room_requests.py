@@ -10,8 +10,8 @@ import pytest
 
 pytestmark = pytest.mark.django_db
 
-from hostel.models import RoomRequest
-from hostel.tests.test_allocate import _auth_client, _make_room
+from hostel.models import RoomRequest  # noqa: E402
+from hostel.tests.test_allocate import _auth_client, _make_room  # noqa: E402
 
 
 def test_student_can_create_room_request():
@@ -65,7 +65,6 @@ def test_student_lists_only_own_requests():
     response = client_a.get("/api/v1/hostel/room-requests/mine")
     assert response.status_code == 200
     items = response.json()["data"]["results"] if "results" in response.json()["data"] else response.json()["data"]
-    student_ids = {item.get("student_id") for item in items} if items and "student_id" in items[0] else None
     assert len(items) == 1
 
 
