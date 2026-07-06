@@ -105,7 +105,7 @@ class Receipt(TenantModel):
     # attest to and what's actually in the PDF bytes.
     pdf_data = models.BinaryField()
     # HMAC-SHA256(receipt_id, RECEIPT_HMAC_SECRET) hex digest — see
-    # billing/receipts.py: sign_token/verify_token. Opaque; carries no
+    # billing/receipts.py: _sign/verify_token. Opaque; carries no
     # embedded data of its own (unlike a JWT), so a leaked token reveals
     # nothing beyond "this is receipt X" once looked up.
     verification_token = models.CharField(max_length=64)

@@ -276,7 +276,16 @@ class VerifyReceiptView(APIView):
         if receipt_id is None:
             return ok({"valid": False})
 
-        receipt = Receipt.objects.get(id=receipt_id)
+        # verify_token() resolves against Receipt.all_objects (tenant-bypassing
+        # by design — the token itself is the authority). A token that's
+        # cryptographically valid but belongs to another tenant must still
+        # read as "not valid for you" here, not 500 — filter().first() instead
+        # of a tenant-scoped get() so a cross-tenant hit degrades to
+        # {"valid": False} instead of an uncaught DoesNotExist.
+        receipt = Receipt.objects.filter(id=receipt_id).first()
+        if receipt is None:
+            return ok({"valid": False})
+
         invoice = receipt.payment.invoice
         return ok(
             {
