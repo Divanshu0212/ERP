@@ -9,6 +9,8 @@ psycopg[binary]
 django-prometheus
 gunicorn
 razorpay
+reportlab
+qrcode[pil]
 -e ../../shared/libs/suerp_common
 
 # Test tooling

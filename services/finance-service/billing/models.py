@@ -99,7 +99,19 @@ class Receipt(TenantModel):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     payment = models.OneToOneField(Payment, on_delete=models.CASCADE, related_name="receipt")
     receipt_no = models.CharField(max_length=100)
-    pdf_url = models.CharField(max_length=500, null=True, blank=True)
+    # Rendered once at payment-success time (see billing/receipts.py:
+    # generate_receipt, called synchronously from PayView) and served as-is
+    # on every download — no re-rendering, no drift between what the QR/HMAC
+    # attest to and what's actually in the PDF bytes.
+    pdf_data = models.BinaryField()
+    # HMAC-SHA256(receipt_id, RECEIPT_HMAC_SECRET) hex digest — see
+    # billing/receipts.py: sign_token/verify_token. Opaque; carries no
+    # embedded data of its own (unlike a JWT), so a leaked token reveals
+    # nothing beyond "this is receipt X" once looked up.
+    verification_token = models.CharField(max_length=64)
+    # Full frontend URL embedded in the QR code, e.g.
+    # "http://localhost:3001/verify-receipt?token=<verification_token>".
+    verify_url = models.CharField(max_length=500)
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):

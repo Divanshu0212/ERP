@@ -29,6 +29,13 @@ ALLOWED_HOSTS = env.list("ALLOWED_HOSTS", default=["*"])
 # Zero-trust JWT: every service verifies signatures itself with this shared
 # key. See suerp_common.auth.JWTAuthentication.
 JWT_SIGNING_KEY = env("JWT_SIGNING_KEY", default="dev-insecure-change-me")
+# Deliberately separate from JWT_SIGNING_KEY: rotating/leaking the shared
+# inter-service JWT key must not invalidate every previously-issued receipt's
+# verification token. See billing/receipts.py.
+RECEIPT_HMAC_SECRET = env("RECEIPT_HMAC_SECRET", default="dev-insecure-receipt-secret")
+# Base URL of the Next.js frontend embedded in the receipt QR's verify link
+# (distinct from GATEWAY_URL, which points at the API gateway).
+FRONTEND_URL = env("FRONTEND_URL", default="http://localhost:3001")
 
 # --- Applications -------------------------------------------------------------
 

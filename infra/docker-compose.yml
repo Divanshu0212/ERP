@@ -210,6 +210,8 @@ services:
       DATABASE_URL: postgres://suerp:suerp@pgbouncer:6432/finance
       RAZORPAY_KEY_ID: ${RAZORPAY_KEY_ID:-}
       RAZORPAY_KEY_SECRET: ${RAZORPAY_KEY_SECRET:-}
+      RECEIPT_HMAC_SECRET: dev-insecure-receipt-secret
+      FRONTEND_URL: http://localhost:3001
     command: *web-command
 
   grievance-service:
