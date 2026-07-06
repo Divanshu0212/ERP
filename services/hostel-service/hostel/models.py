@@ -152,6 +152,37 @@ class LeaveRequest(TenantModel):
         return f"LeaveRequest {self.id} ({self.status})"
 
 
+class RoomRequest(TenantModel):
+    """A student's request to be allocated a specific room, awaiting warden
+    approval. Distinct from ``Allocation`` — this is the pre-approval intent;
+    approving one calls ``create_allocation()`` (hostel/services.py), which
+    creates the actual ``Allocation`` and starts the existing payment saga
+    unchanged.
+    """
+
+    class Status(models.TextChoices):
+        PENDING = "pending", "Pending"
+        APPROVED = "approved", "Approved"
+        REJECTED = "rejected", "Rejected"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    student_id = models.UUIDField()
+    room = models.ForeignKey(Room, on_delete=models.CASCADE, related_name="requests")
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING)
+    requested_on = models.DateTimeField(auto_now_add=True)
+    decided_on = models.DateTimeField(null=True, blank=True)
+    # Reference to auth-service's User table (the warden who approved/rejected).
+    # Bare UUID — no cross-service FK (DB-per-service).
+    decided_by = models.UUIDField(null=True, blank=True)
+    rejection_reason = models.CharField(max_length=500, blank=True, default="")
+
+    class Meta:
+        ordering = ["-requested_on"]
+
+    def __str__(self):
+        return f"RoomRequest {self.id} ({self.status})"
+
+
 class Complaint(TenantModel):
     class Status(models.TextChoices):
         OPEN = "open", "Open"

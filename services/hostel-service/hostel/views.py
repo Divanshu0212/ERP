@@ -24,7 +24,7 @@ from django.db.models import F
 from django.http import Http404
 from django.shortcuts import get_object_or_404
 from hostel.lookups import LookupFailed, resolve_user_by_email
-from hostel.models import Allocation, AllocationImportBatch, AllocationImportRow, Block, Room
+from hostel.models import Allocation, AllocationImportBatch, AllocationImportRow, Block, Room, RoomRequest
 from hostel.serializers import (
     AllocateRequestSerializer,
     AllocationImportBatchDetailSerializer,
@@ -33,6 +33,8 @@ from hostel.serializers import (
     BlockCreateSerializer,
     BlockSerializer,
     RoomCreateSerializer,
+    RoomRequestCreateSerializer,
+    RoomRequestSerializer,
     RoomSerializer,
 )
 from hostel.services import RoomFullError, create_allocation
@@ -161,6 +163,52 @@ class AllocationListView(ListAPIView):
 
     def get_queryset(self):
         return Allocation.objects.all().order_by("-created_at")
+
+
+class RoomRequestCreateView(APIView):
+    """POST /api/v1/hostel/room-requests — student requests a specific room.
+
+    Only checks the room has free capacity at request time (same
+    ``is_available`` check ``create_allocation`` uses) — this is advisory,
+    not a reservation; the authoritative capacity check + row lock happens
+    again in ``create_allocation`` at approval time, so a room that fills up
+    between request and approval correctly 400s the approval instead.
+    """
+
+    permission_classes = [role_required("student")]
+
+    def post(self, request):
+        serializer = RoomRequestCreateSerializer(data=request.data)
+        if not serializer.is_valid():
+            return fail("Invalid room request payload.", errors=serializer.errors, status=400)
+
+        room = get_object_or_404(Room.objects.all(), id=serializer.validated_data["room_id"])
+        if not room.is_available:
+            return fail("Room is at full capacity.", status=400)
+
+        room_request = RoomRequest.objects.create(
+            tenant_id=get_current_tenant(),
+            student_id=request.user.id,
+            room=room,
+            status=RoomRequest.Status.PENDING,
+        )
+        return ok(
+            RoomRequestSerializer(room_request).data,
+            message="Room request submitted.",
+            status=201,
+        )
+
+
+class MyRoomRequestsView(ListAPIView):
+    """GET /api/v1/hostel/room-requests/mine — the caller's own requests."""
+
+    serializer_class = RoomRequestSerializer
+    permission_classes = [role_required("student")]
+
+    def get_queryset(self):
+        return RoomRequest.objects.filter(student_id=self.request.user.id).order_by(
+            "-requested_on"
+        )
 
 
 class AllocationImportLogListView(ListAPIView):

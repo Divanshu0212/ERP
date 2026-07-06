@@ -4,7 +4,14 @@ Request validation and response shaping only — the allocate flow's actual
 capacity-check/atomic-commit/outbox logic lives in ``hostel.views.AllocateView``.
 """
 
-from hostel.models import Allocation, AllocationImportBatch, AllocationImportRow, Block, Room
+from hostel.models import (
+    Allocation,
+    AllocationImportBatch,
+    AllocationImportRow,
+    Block,
+    Room,
+    RoomRequest,
+)
 from rest_framework import serializers
 
 
@@ -98,3 +105,29 @@ class AllocationImportBatchDetailSerializer(AllocationImportBatchSerializer):
 
     class Meta(AllocationImportBatchSerializer.Meta):
         fields = AllocationImportBatchSerializer.Meta.fields + ["rows"]
+
+
+class RoomRequestCreateSerializer(serializers.Serializer):
+    room_id = serializers.UUIDField()
+
+
+class RoomRequestSerializer(serializers.ModelSerializer):
+    room_id = serializers.UUIDField(source="room.id", read_only=True)
+    room_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = RoomRequest
+        fields = [
+            "id",
+            "student_id",
+            "room_id",
+            "room_name",
+            "status",
+            "requested_on",
+            "decided_on",
+            "rejection_reason",
+        ]
+        read_only_fields = fields
+
+    def get_room_name(self, obj):
+        return f"{obj.room.block.name} - {obj.room.room_no}"
