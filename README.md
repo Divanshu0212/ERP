@@ -366,6 +366,65 @@ header-spoofing test in auth).
 | `hostel.allocation.released`   | hostel       | notification (compensation)        |
 | `grievance.created`            | grievance    | ai                                 |
 | `grievance.scored`             | ai           | grievance, notification            |
+| `hostel.swap.requested`        | hostel       | notification                       |
+
+---
+
+## Planned: hostel allocation workflow v2
+
+Design notes for three in-progress hostel-service/finance-service features (student
+room requests, fee-configurable receipts, room swaps). Not yet implemented — this is
+the agreed design, kept here instead of a separate spec doc.
+
+### 1. Room-aware bulk allocation template
+
+- `GET /api/v1/hostel/rooms/available-template` (new) returns a CSV of currently
+  available rooms only: `room_id,room_name,student_email` (email column blank).
+  `room_name` is `"{block.name} - {room.room_no}"`. Replaces the static
+  `public/sample-allocation-import.csv` link on the warden dashboard.
+- `AllocateBulkView`/`_parse_rows`: a row with a blank `student_email` no longer counts
+  as a failure. New `AllocationImportRow.Status.SKIPPED` — logged with reason "no email
+  provided", excluded from `fail_count` (only real errors count as failed).
+
+### 2. Student room requests + warden approval + configurable fees + receipts
+
+- New `RoomRequest` model (hostel-service): `student_id`, `room` (FK), `status`
+  (pending/approved/rejected), `requested_on`, `decided_on`, `decided_by`,
+  `rejection_reason`.
+- Student: browses available rooms, `POST /api/v1/hostel/room-requests` to request one.
+- Warden: `GET /api/v1/hostel/room-requests?status=pending`,
+  `POST .../{id}/approve` (choosing a `FeeStructure`) or `.../{id}/reject` (with reason).
+  Approve calls the existing `create_allocation()` unchanged — the payment saga
+  (invoice → pay → confirm) proceeds exactly as today.
+- `FeeStructure` (finance-service, model already existed but was unused) gets a real
+  CRUD surface for warden/admin, replacing the hardcoded `HOSTEL_FEE_AMOUNT` constant
+  in `billing/consumers.py`. Invoice amount/purpose come from the chosen fee structure.
+- On `finance.payment.success`, a new consumer handler populates the existing (until
+  now unused) `Receipt` model: generates a PDF (via `reportlab`) with university name
+  (denormalized onto `Invoice` at creation time, sourced from auth-service's
+  `Institution.name`), amount, purpose, and a signed verification token (HMAC using the
+  shared `JWT_SIGNING_KEY`) rendered as both a QR code and a plain-text code.
+  - `GET /api/v1/finance/receipts/{id}/pdf` — student downloads.
+  - `POST /api/v1/finance/receipts/verify` — warden/admin verify a token.
+
+### 3. Room exchange (swap) between students
+
+- New `SwapRequest` model (hostel-service): `initiator_student_id`,
+  `initiator_allocation` (FK), `target_room` (FK), `acceptor_student_id` (nullable),
+  `acceptor_allocation` (nullable FK), `status`
+  (pending_acceptance/accepted/approved/rejected/cancelled), `requested_on`,
+  `decided_on`, `decided_by`.
+- Student A picks a target room (any occupied room that isn't their own) —
+  `POST /api/v1/hostel/swap-requests {target_room_id}`. Publishes
+  `hostel.swap.requested`; notification-service notifies every current occupant of the
+  target room (rooms can hold multiple students).
+- First occupant to accept — `POST /api/v1/hostel/swap-requests/{id}/accept` — becomes
+  the acceptor (DB-level guard so only the first accept wins; later ones get 409).
+- Warden reviews `status=accepted` requests and approves or rejects manually — no
+  automatic gender/capacity re-check, that judgment is left to the warden.
+- Approve: atomically swaps the `room` FK on both `Allocation` rows. No
+  `occupied_count` change, no new invoice or saga — they already paid for a room, just
+  a different one now.
 
 ---
 
