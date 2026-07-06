@@ -265,6 +265,7 @@ interface BulkImportSummary {
   total_rows: number;
   success_count: number;
   fail_count: number;
+  skipped_count: number;
 }
 
 function BulkAllocationImport({ onImported }: { onImported: () => void }) {
@@ -272,6 +273,8 @@ function BulkAllocationImport({ onImported }: { onImported: () => void }) {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [summary, setSummary] = useState<BulkImportSummary | null>(null);
+  const [templateError, setTemplateError] = useState<string | null>(null);
+  const [templatePending, setTemplatePending] = useState(false);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -291,18 +294,35 @@ function BulkAllocationImport({ onImported }: { onImported: () => void }) {
     }
   }
 
+  async function downloadTemplate() {
+    setTemplatePending(true);
+    setTemplateError(null);
+    try {
+      await api.download("/api/v1/hostel/rooms/available-template", "allocation-template.csv");
+    } catch (err) {
+      setTemplateError(errMsg(err));
+    } finally {
+      setTemplatePending(false);
+    }
+  }
+
   return (
     <Card>
       <CardHeader title="Bulk allocate from CSV/XLSX" />
       <CardBody>
         <form onSubmit={submit} className="space-y-4">
-          <a
-            href="/sample-allocation-import.csv"
-            download
-            className="text-[13px] text-primary underline"
-          >
-            Download sample CSV
-          </a>
+          <div>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              loading={templatePending}
+              onClick={downloadTemplate}
+            >
+              Download available-rooms template
+            </Button>
+            {templateError && <Alert tone="error">{templateError}</Alert>}
+          </div>
           <Field label="File" htmlFor="bulk-file">
             <input
               id="bulk-file"
@@ -315,8 +335,9 @@ function BulkAllocationImport({ onImported }: { onImported: () => void }) {
           {error && <Alert tone="error">{error}</Alert>}
           {summary && (
             <Alert tone={summary.fail_count > 0 ? "info" : "success"}>
-              {summary.success_count} succeeded, {summary.fail_count} failed out of{" "}
-              {summary.total_rows}. See Import Logs below for details.
+              {summary.success_count} succeeded, {summary.fail_count} failed,{" "}
+              {summary.skipped_count} skipped out of {summary.total_rows}. See Import
+              Logs below for details.
             </Alert>
           )}
           <Button type="submit" loading={pending} disabled={!file}>
@@ -334,6 +355,7 @@ interface ImportBatch {
   total_rows: number;
   success_count: number;
   fail_count: number;
+  skipped_count: number;
   created_at: string;
 }
 
@@ -397,6 +419,7 @@ function ImportLogs() {
             <TH>Uploaded</TH>
             <TH>Success</TH>
             <TH>Failed</TH>
+            <TH>Skipped</TH>
             <TH />
           </HeaderRow>
         </THead>
@@ -407,6 +430,7 @@ function ImportLogs() {
               <TD className="text-muted">{new Date(b.created_at).toLocaleString()}</TD>
               <TD>{b.success_count}</TD>
               <TD>{b.fail_count}</TD>
+              <TD>{b.skipped_count}</TD>
               <TD>
                 <Button variant="ghost" size="sm" onClick={() => viewBatch(b.id)}>
                   View

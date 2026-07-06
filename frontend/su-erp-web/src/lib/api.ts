@@ -120,6 +120,39 @@ export async function apiUpload<T = unknown>(
   return unwrap<T>(() => fetch(url, { method: "POST", headers, body: formData }), "POST", path);
 }
 
+/**
+ * Download a file from an authenticated endpoint and trigger a browser save.
+ * Distinct from apiCall/apiUpload: the response is a raw file (not the JSON
+ * envelope), so this fetches, reads a Blob, and drives an anchor-click download
+ * instead of calling `unwrap`.
+ */
+export async function downloadFile(path: string, filename: string): Promise<void> {
+  const url = buildUrl(path);
+  const headers = authHeaders();
+
+  let response: Response;
+  try {
+    response = await fetch(url, { method: "GET", headers });
+  } catch (cause) {
+    const detail = cause instanceof Error ? cause.message : String(cause);
+    throw new ApiError(`Network error calling GET ${path}: ${detail}`);
+  }
+
+  if (!response.ok) {
+    throw new ApiError(`Download failed for ${path} (status ${response.status})`, response.status);
+  }
+
+  const blob = await response.blob();
+  const objectUrl = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = objectUrl;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  document.body.removeChild(anchor);
+  URL.revokeObjectURL(objectUrl);
+}
+
 /** Convenience wrappers around apiCall/apiUpload. */
 export const api = {
   get: <T = unknown>(path: string) => apiCall<T>("GET", path),
@@ -129,4 +162,5 @@ export const api = {
   delete: <T = unknown>(path: string) => apiCall<T>("DELETE", path),
   upload: <T = unknown>(path: string, file: File, fieldName?: string) =>
     apiUpload<T>(path, file, fieldName),
+  download: (path: string, filename: string) => downloadFile(path, filename),
 };
