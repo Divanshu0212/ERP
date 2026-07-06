@@ -21,6 +21,7 @@ import uuid as uuid_lib
 
 import openpyxl
 import requests  # noqa: F401 -- test patch target: hostel.lookups shares this module object
+from django.db import IntegrityError, transaction
 from django.db.models import F
 from django.http import Http404
 from django.shortcuts import get_object_or_404
@@ -203,12 +204,22 @@ class RoomRequestListCreateView(APIView):
         if not room.is_available:
             return fail("Room is at full capacity.", status=400)
 
-        room_request = RoomRequest.objects.create(
-            tenant_id=get_current_tenant(),
-            student_id=request.user.id,
-            room=room,
-            status=RoomRequest.Status.PENDING,
-        )
+        try:
+            # Savepoint so a constraint violation only rolls back this INSERT,
+            # not any surrounding transaction (e.g. Django's test-case atomic).
+            with transaction.atomic():
+                room_request = RoomRequest.objects.create(
+                    tenant_id=get_current_tenant(),
+                    student_id=request.user.id,
+                    room=room,
+                    status=RoomRequest.Status.PENDING,
+                )
+        except IntegrityError:
+            # DB-level guard (roomrequest_one_pending_per_student_room): the
+            # student already has a pending request for this room. A repeat
+            # submit is a no-op, not a second queue entry.
+            return fail("You already have a pending request for this room.", status=400)
+
         return ok(
             RoomRequestSerializer(room_request).data,
             message="Room request submitted.",
@@ -235,28 +246,44 @@ class ApproveRoomRequestView(APIView):
         if not serializer.is_valid():
             return fail("Invalid approval payload.", errors=serializer.errors, status=400)
 
-        room_request = get_object_or_404(
-            RoomRequest.objects.filter(status=RoomRequest.Status.PENDING), id=pk
-        )
+        # Fetch by id alone (any status): an unknown id 404s, but an
+        # already-decided one must reach the conditional update below so it
+        # short-circuits to a clean 400 "already decided" — not a 404.
+        room_request = get_object_or_404(RoomRequest.objects.all(), id=pk)
 
+        # Flip pending -> approved FIRST, with an atomic conditional update that
+        # only one caller can win (rowcount == 1). A duplicate/replayed approve
+        # (or a concurrent one) sees the row already non-pending, so its update
+        # affects 0 rows and we short-circuit BEFORE calling create_allocation —
+        # this is what prevents a second Allocation + second invoice for the
+        # same request. create_allocation only runs if we won the flip.
         university_name = resolve_institution_name(request.META.get("HTTP_AUTHORIZATION"))
 
         try:
-            create_allocation(
-                room_request.room_id,
-                room_request.student_id,
-                get_current_tenant(),
-                fee_structure_id=serializer.validated_data["fee_structure_id"],
-                university_name=university_name,
-            )
+            with transaction.atomic():
+                flipped = RoomRequest.objects.filter(
+                    id=pk, status=RoomRequest.Status.PENDING
+                ).update(
+                    status=RoomRequest.Status.APPROVED,
+                    decided_on=timezone.now(),
+                    decided_by=request.user.id,
+                )
+                if flipped != 1:
+                    return fail("Room request has already been decided.", status=400)
+
+                create_allocation(
+                    room_request.room_id,
+                    room_request.student_id,
+                    get_current_tenant(),
+                    fee_structure_id=serializer.validated_data["fee_structure_id"],
+                    university_name=university_name,
+                )
         except RoomFullError:
+            # The flip is rolled back with the surrounding atomic block, so the
+            # request stays pending (not stranded as approved-with-no-allocation).
             return fail("Room is no longer available.", status=400)
 
-        room_request.status = RoomRequest.Status.APPROVED
-        room_request.decided_on = timezone.now()
-        room_request.decided_by = request.user.id
-        room_request.save(update_fields=["status", "decided_on", "decided_by"])
-
+        room_request.refresh_from_db()
         return ok(RoomRequestSerializer(room_request).data, message="Room request approved.")
 
 

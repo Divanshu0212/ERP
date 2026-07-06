@@ -178,6 +178,17 @@ class RoomRequest(TenantModel):
 
     class Meta:
         ordering = ["-requested_on"]
+        constraints = [
+            # A student can hold at most ONE pending request per room. Scoped to
+            # status="pending" so a rejected/approved request never blocks a
+            # later re-request for the same room, but a duplicate PENDING one
+            # (double-submit, replay) is rejected at the DB level.
+            models.UniqueConstraint(
+                fields=["tenant_id", "student_id", "room"],
+                condition=models.Q(status="pending"),
+                name="roomrequest_one_pending_per_student_room",
+            ),
+        ]
 
     def __str__(self):
         return f"RoomRequest {self.id} ({self.status})"

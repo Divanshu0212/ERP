@@ -60,6 +60,49 @@ def test_warden_approves_request_creates_allocation_with_fee_and_university(mock
     assert event.payload["university_name"] == "Test University"
 
 
+@patch("hostel.views.requests.get")
+def test_double_approve_does_not_create_second_allocation(mock_get):
+    """A replayed/duplicate approve on an already-approved request returns a
+    clean 400 "already decided" and does NOT create a second Allocation."""
+    tenant_id = uuid.uuid4()
+    room = _make_room(tenant_id, capacity=2, occupied_count=0, room_no="101")
+    student_id = uuid.uuid4()
+
+    student_client = _auth_client(tenant_id, role="student", user_id=student_id)
+    create_response = student_client.post(
+        "/api/v1/hostel/room-requests", {"room_id": str(room.id)}, format="json"
+    )
+    request_id = create_response.json()["data"]["id"]
+
+    mock_get.return_value.status_code = 200
+    mock_get.return_value.ok = True
+    mock_get.return_value.json.return_value = {
+        "success": True,
+        "data": {"id": str(tenant_id), "slug": "test-uni", "name": "Test University"},
+    }
+
+    warden_client = _auth_client(tenant_id, role="warden")
+    fee_structure_id = uuid.uuid4()
+
+    first = warden_client.post(
+        f"/api/v1/hostel/room-requests/{request_id}/approve",
+        {"fee_structure_id": str(fee_structure_id)},
+        format="json",
+    )
+    assert first.status_code == 200, first.content
+
+    second = warden_client.post(
+        f"/api/v1/hostel/room-requests/{request_id}/approve",
+        {"fee_structure_id": str(fee_structure_id)},
+        format="json",
+    )
+    assert second.status_code == 400, second.content
+
+    assert (
+        Allocation.all_objects.filter(student_id=student_id, tenant_id=tenant_id).count() == 1
+    )
+
+
 def test_warden_rejects_request():
     tenant_id = uuid.uuid4()
     room = _make_room(tenant_id, capacity=2, occupied_count=0, room_no="101")
