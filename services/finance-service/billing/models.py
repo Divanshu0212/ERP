@@ -49,6 +49,15 @@ class Invoice(TenantModel):
     purpose = models.CharField(max_length=100)
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING)
     idempotency_key = models.CharField(max_length=255, null=True, blank=True)
+    # Denormalized from auth-service's Institution.name at invoice-creation
+    # time (see billing/consumers.py: handle_allocation_requested). Consumers
+    # run with no request context and no live cross-service HTTP call of
+    # their own (see hostel/lookups.py: resolve_institution_name, called by
+    # the WARDEN's live request in hostel-service instead, then threaded
+    # through the event payload) — this field exists so Task 6's receipt PDF
+    # can render a university name without finance-service ever calling
+    # auth-service itself.
+    university_name = models.CharField(max_length=255, blank=True, default="")
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
