@@ -146,6 +146,22 @@ def test_verify_endpoint_invalid_token():
     assert response.json()["data"]["valid"] is False
 
 
+def test_verify_endpoint_cross_tenant_token_reads_as_invalid_not_500():
+    other_tenant_id = uuid.uuid4()
+    other_student_id = uuid.uuid4()
+    invoice, payment = _make_paid_invoice_and_payment(other_tenant_id, other_student_id)
+    receipt = generate_receipt(payment)
+
+    warden_tenant_id = uuid.uuid4()
+    warden_client = _auth_client(warden_tenant_id, role="warden")
+    response = warden_client.post(
+        "/api/v1/finance/receipts/verify", {"token": receipt.verification_token}, format="json"
+    )
+
+    assert response.status_code == 200
+    assert response.json()["data"]["valid"] is False
+
+
 def test_student_role_forbidden_from_verify():
     tenant_id = uuid.uuid4()
     student_client = _auth_client(tenant_id, role="student")
