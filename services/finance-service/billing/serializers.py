@@ -4,7 +4,7 @@ Request validation and response shaping only — the pay flow's actual
 charge/atomic-commit/outbox logic lives in ``billing.views.PayView``.
 """
 
-from billing.models import Invoice
+from billing.models import FeeStructure, Invoice
 from rest_framework import serializers
 
 
@@ -30,3 +30,16 @@ class PaySerializer(serializers.Serializer):
     razorpay_order_id = serializers.CharField(max_length=255, required=False)
     razorpay_payment_id = serializers.CharField(max_length=255, required=False)
     razorpay_signature = serializers.CharField(max_length=255, required=False)
+
+
+class FeeStructureSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = FeeStructure
+        fields = ["id", "name", "amount", "purpose", "created_at"]
+        read_only_fields = fields
+
+
+class FeeStructureCreateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = FeeStructure
+        fields = ["name", "amount", "purpose"]

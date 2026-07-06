@@ -19,9 +19,15 @@ success without touching the gateway or emitting a new event).
 """
 
 from billing.gateway import ChargeResult, SimulatedGateway
-from billing.models import Invoice, Payment
-from billing.serializers import InvoiceCreateSerializer, InvoiceSerializer, PaySerializer
-from django.db import transaction
+from billing.models import FeeStructure, Invoice, Payment
+from billing.serializers import (
+    FeeStructureCreateSerializer,
+    FeeStructureSerializer,
+    InvoiceCreateSerializer,
+    InvoiceSerializer,
+    PaySerializer,
+)
+from django.db import IntegrityError, transaction
 from django.shortcuts import get_object_or_404
 from rest_framework.generics import ListAPIView
 from rest_framework.permissions import IsAuthenticated
@@ -60,6 +66,42 @@ class InvoiceListCreateView(ListAPIView):
 
         invoice = serializer.save(tenant_id=request.tenant_id)
         return ok(InvoiceSerializer(invoice).data, message="Invoice created.", status=201)
+
+
+class FeeStructureListCreateView(ListAPIView):
+    """GET lists fee structures (tenant-scoped, paginated), any authenticated
+    role — a warden approving a room request needs to read these to build a
+    fee picker. POST creates one, admin-only.
+    """
+
+    serializer_class = FeeStructureSerializer
+
+    def get_permissions(self):
+        if self.request.method == "POST":
+            return [role_required("admin")()]
+        return [IsAuthenticated()]
+
+    def get_queryset(self):
+        return FeeStructure.objects.all().order_by("purpose")
+
+    def post(self, request):
+        serializer = FeeStructureCreateSerializer(data=request.data)
+        if not serializer.is_valid():
+            return fail("Invalid fee structure payload.", errors=serializer.errors, status=400)
+
+        try:
+            fee_structure = serializer.save(tenant_id=request.tenant_id)
+        except IntegrityError:
+            return fail(
+                "A fee structure with this purpose already exists for this tenant.",
+                status=400,
+            )
+
+        return ok(
+            FeeStructureSerializer(fee_structure).data,
+            message="Fee structure created.",
+            status=201,
+        )
 
 
 def _payment_outcome(payment: Payment) -> dict:
