@@ -3,7 +3,14 @@
 Included under /api/v1/finance/ from config.urls.
 """
 
-from billing.views import FeeStructureListCreateView, InvoiceListCreateView, PayView, RazorpayOrderView
+from billing.views import (
+    FeeStructureListCreateView,
+    InvoiceListCreateView,
+    PayView,
+    RazorpayOrderView,
+    ReceiptPdfView,
+    VerifyReceiptView,
+)
 from django.urls import path
 
 urlpatterns = [
@@ -15,4 +22,6 @@ urlpatterns = [
     ),
     path("pay", PayView.as_view(), name="pay"),
     path("fee-structures", FeeStructureListCreateView.as_view(), name="fee-structure-list-create"),
+    path("receipts/verify", VerifyReceiptView.as_view(), name="receipt-verify"),
+    path("receipts/<uuid:receipt_id>/pdf", ReceiptPdfView.as_view(), name="receipt-pdf"),
 ]

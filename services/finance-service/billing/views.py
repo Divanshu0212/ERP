@@ -19,7 +19,8 @@ success without touching the gateway or emitting a new event).
 """
 
 from billing.gateway import ChargeResult, SimulatedGateway
-from billing.models import FeeStructure, Invoice, Payment
+from billing.models import FeeStructure, Invoice, Payment, Receipt
+from billing.receipts import generate_receipt, verify_token
 from billing.serializers import (
     FeeStructureCreateSerializer,
     FeeStructureSerializer,
@@ -202,6 +203,7 @@ class PayView(APIView):
                 invoice.status = Invoice.Status.PAID
                 invoice.idempotency_key = idempotency_key
                 invoice.save(update_fields=["status", "idempotency_key"])
+                generate_receipt(payment)
 
                 publish_event(
                     "finance.payment.success",
@@ -237,3 +239,52 @@ class PayView(APIView):
                 )
 
             return ok(_payment_outcome(payment), message=result.message)
+
+
+class ReceiptPdfView(APIView):
+    """GET /api/v1/finance/receipts/<uuid:receipt_id>/pdf — download the
+    stored PDF bytes as-is (rendered once at payment-success time, see
+    billing.receipts.generate_receipt). Tenant-scoped: cross-tenant/unknown
+    receipt_id -> 404, same pattern as RazorpayOrderView.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, receipt_id):
+        from django.http import HttpResponse
+
+        receipt = get_object_or_404(Receipt.objects, id=receipt_id)
+        response = HttpResponse(bytes(receipt.pdf_data), content_type="application/pdf")
+        response["Content-Disposition"] = f'inline; filename="{receipt.receipt_no}.pdf"'
+        return response
+
+
+class VerifyReceiptView(APIView):
+    """POST /api/v1/finance/receipts/verify — warden/admin checks a
+    verification_token (scanned from the QR or typed from the plain-text
+    code beneath it). Returns {valid, receipt_no, amount, purpose,
+    university_name, paid_on} on a match, {valid: false} otherwise — never
+    404s on a bad token, since "this token is invalid" is itself a normal,
+    expected verification outcome, not an error.
+    """
+
+    permission_classes = [role_required("warden", "admin")]
+
+    def post(self, request):
+        token = request.data.get("token", "")
+        receipt_id = verify_token(token)
+        if receipt_id is None:
+            return ok({"valid": False})
+
+        receipt = Receipt.objects.get(id=receipt_id)
+        invoice = receipt.payment.invoice
+        return ok(
+            {
+                "valid": True,
+                "receipt_no": receipt.receipt_no,
+                "amount": str(invoice.amount),
+                "purpose": invoice.purpose,
+                "university_name": invoice.university_name,
+                "paid_on": receipt.created_at.isoformat(),
+            }
+        )
