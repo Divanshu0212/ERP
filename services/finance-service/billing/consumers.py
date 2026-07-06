@@ -42,7 +42,7 @@ keep the write + ``publish_event`` call in one atomic block.
 
 from decimal import Decimal
 
-from billing.models import Invoice
+from billing.models import FeeStructure, Invoice
 from django.db import transaction
 from suerp_common.inbox import idempotent
 from suerp_common.outbox import publish_event
@@ -50,26 +50,50 @@ from suerp_common.outbox import publish_event
 HOSTEL_FEE_AMOUNT = Decimal("5000.00")
 
 
+def _resolve_hostel_fee_amount(tenant_id, fee_structure_id) -> Decimal:
+    """Look up the warden-chosen FeeStructure's amount, falling back to the
+    hardcoded default when no fee_structure_id was passed (legacy direct-
+    allocate path — AllocateView/AllocateBulkView don't collect a fee choice
+    at all) or when the id doesn't resolve (deleted/cross-tenant/typo'd —
+    fail open to the old default rather than blocking invoice creation
+    entirely, since this consumer has no way to surface an error back to the
+    warden who already approved the request).
+    """
+    if not fee_structure_id:
+        return HOSTEL_FEE_AMOUNT
+
+    fee_structure = FeeStructure.all_objects.filter(
+        tenant_id=tenant_id, id=fee_structure_id
+    ).first()
+    return fee_structure.amount if fee_structure is not None else HOSTEL_FEE_AMOUNT
+
+
 @idempotent
 def handle_allocation_requested(event: dict) -> None:
     """Handle ``hostel.allocation.requested``: create a pending hostel Invoice.
 
     Expects ``event["payload"]`` to contain ``allocation_id``, ``student_id``,
-    and ``room_id`` (room_id is unused here but part of the envelope), and
-    ``event["tenant_id"]`` at the top level of the envelope.
+    ``room_id``, and (new) ``fee_structure_id``/``university_name`` — both
+    optional, present only when the allocation came from warden room-request
+    approval rather than the direct AllocateView/AllocateBulkView path.
     """
     tenant_id = event["tenant_id"]
     payload = event["payload"]
     student_id = payload["student_id"]
     allocation_id = payload["allocation_id"]
+    fee_structure_id = payload.get("fee_structure_id")
+    university_name = payload.get("university_name") or ""
+
+    amount = _resolve_hostel_fee_amount(tenant_id, fee_structure_id)
 
     with transaction.atomic():
         invoice = Invoice.all_objects.create(
             tenant_id=tenant_id,
             student_id=student_id,
-            amount=HOSTEL_FEE_AMOUNT,
+            amount=amount,
             purpose="hostel",
             status=Invoice.Status.PENDING,
+            university_name=university_name,
         )
 
         publish_event(
@@ -79,7 +103,7 @@ def handle_allocation_requested(event: dict) -> None:
                 "invoice_id": str(invoice.id),
                 "student_id": student_id,
                 "allocation_id": allocation_id,
-                "amount": str(HOSTEL_FEE_AMOUNT),
+                "amount": str(amount),
                 "purpose": "hostel",
             },
         )
