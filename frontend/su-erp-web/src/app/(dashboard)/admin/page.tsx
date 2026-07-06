@@ -182,6 +182,8 @@ function AdminContent() {
 
       <CreateInvoice users={users} onCreated={loadCrossStats} />
 
+      <FeeStructures />
+
       <DataPanel
         title="Users"
         loading={usersLoading}
@@ -342,6 +344,136 @@ function CreateInvoice({ users, onCreated }: { users: User[]; onCreated: () => v
           {ok && <Alert tone="success">{ok}</Alert>}
           <Button type="submit" loading={pending}>
             Create invoice
+          </Button>
+        </form>
+      </CardBody>
+    </Card>
+  );
+}
+
+interface FeeStructure {
+  id: string;
+  name: string;
+  amount: string;
+  purpose: string;
+}
+
+function FeeStructures() {
+  const [feeStructures, setFeeStructures] = useState<FeeStructure[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await api.get("/api/v1/finance/fee-structures");
+      setFeeStructures(listItems<FeeStructure>(data));
+    } catch (e) {
+      setError(errMsg(e));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  return (
+    <div className="space-y-6">
+      <CreateFeeStructure onCreated={load} />
+      <DataPanel
+        title="Fee structures"
+        loading={loading}
+        error={error}
+        isEmpty={feeStructures.length === 0}
+        emptyLabel="No fee structures yet. Add one below."
+      >
+        <Table>
+          <THead>
+            <HeaderRow>
+              <TH>Name</TH>
+              <TH>Purpose</TH>
+              <TH>Amount</TH>
+            </HeaderRow>
+          </THead>
+          <TBody>
+            {feeStructures.map((f) => (
+              <Row key={f.id}>
+                <TD className="font-medium">{f.name}</TD>
+                <TD className="text-muted">{f.purpose}</TD>
+                <TD>{f.amount}</TD>
+              </Row>
+            ))}
+          </TBody>
+        </Table>
+      </DataPanel>
+    </div>
+  );
+}
+
+function CreateFeeStructure({ onCreated }: { onCreated: () => void }) {
+  const [name, setName] = useState("");
+  const [amount, setAmount] = useState("");
+  const [purpose, setPurpose] = useState("");
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [ok, setOk] = useState<string | null>(null);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    setPending(true);
+    setError(null);
+    setOk(null);
+    try {
+      await api.post("/api/v1/finance/fee-structures", { name, amount, purpose });
+      setOk("Fee structure created.");
+      setName("");
+      setAmount("");
+      setPurpose("");
+      onCreated();
+    } catch (err) {
+      setError(fieldErrorMessage(err) ?? errMsg(err));
+    } finally {
+      setPending(false);
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader title="Create fee structure" />
+      <CardBody>
+        <form onSubmit={submit} className="space-y-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <Field label="Name" htmlFor="fee-name">
+              <Input id="fee-name" value={name} onChange={(e) => setName(e.target.value)} required />
+            </Field>
+            <Field label="Purpose" htmlFor="fee-purpose">
+              <Input
+                id="fee-purpose"
+                value={purpose}
+                onChange={(e) => setPurpose(e.target.value)}
+                placeholder="hostel"
+                required
+              />
+            </Field>
+            <Field label="Amount" htmlFor="fee-amount">
+              <Input
+                id="fee-amount"
+                type="number"
+                min={0}
+                step="0.01"
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                required
+              />
+            </Field>
+          </div>
+          {error && <Alert tone="error">{error}</Alert>}
+          {ok && <Alert tone="success">{ok}</Alert>}
+          <Button type="submit" loading={pending}>
+            Create fee structure
           </Button>
         </form>
       </CardBody>
