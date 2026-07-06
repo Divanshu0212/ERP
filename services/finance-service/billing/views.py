@@ -297,3 +297,22 @@ class VerifyReceiptView(APIView):
                 "paid_on": receipt.created_at.isoformat(),
             }
         )
+
+
+class ReceiptPdfByInvoiceView(APIView):
+    """GET /api/v1/finance/receipts/by-invoice/<uuid:invoice_id>/pdf —
+    convenience lookup for the student invoice table, which only has an
+    invoice_id on hand (Invoice and Receipt aren't joined in any response
+    the student page already fetches). 404s if the invoice has no receipt
+    yet (unpaid, or paid before this feature existed).
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, invoice_id):
+        from django.http import HttpResponse
+
+        receipt = get_object_or_404(Receipt.objects, payment__invoice_id=invoice_id)
+        response = HttpResponse(bytes(receipt.pdf_data), content_type="application/pdf")
+        response["Content-Disposition"] = f'inline; filename="{receipt.receipt_no}.pdf"'
+        return response

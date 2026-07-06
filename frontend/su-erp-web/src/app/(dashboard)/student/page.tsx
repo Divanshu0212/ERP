@@ -9,6 +9,8 @@ import { listItems } from "@/lib/paginate";
 import { openRazorpayCheckout, toPaise } from "@/lib/razorpay";
 import { Card, CardBody, CardHeader } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
+import { Field } from "@/components/ui/Field";
+import { Select } from "@/components/ui/Select";
 import { Alert } from "@/components/ui/Alert";
 import { StatusPill } from "@/components/ui/StatusPill";
 import { Table, TBody, TD, TH, THead, HeaderRow, Row } from "@/components/ui/Table";
@@ -33,6 +35,22 @@ interface Notification {
   title: string;
   body: string;
   created_at: string;
+}
+
+interface AvailableRoom {
+  id: string;
+  block_name: string;
+  room_no: string;
+  is_available: boolean;
+}
+
+interface RoomRequest {
+  id: string;
+  room_id: string;
+  room_name: string;
+  status: string;
+  requested_on: string;
+  rejection_reason: string;
 }
 
 function errMsg(e: unknown): string {
@@ -205,15 +223,31 @@ function StudentContent() {
                   <StatusPill status={inv.status} />
                 </TD>
                 <TD className="text-right">
-                  <Button
-                    size="sm"
-                    variant={isPaid(inv.status) ? "secondary" : "primary"}
-                    loading={payingId === inv.id}
-                    disabled={isPaid(inv.status) || payingId === inv.id}
-                    onClick={() => void payInvoice(inv)}
-                  >
-                    {isPaid(inv.status) ? "Paid" : "Pay"}
-                  </Button>
+                  <div className="flex items-center justify-end gap-2">
+                    <Button
+                      size="sm"
+                      variant={isPaid(inv.status) ? "secondary" : "primary"}
+                      loading={payingId === inv.id}
+                      disabled={isPaid(inv.status) || payingId === inv.id}
+                      onClick={() => void payInvoice(inv)}
+                    >
+                      {isPaid(inv.status) ? "Paid" : "Pay"}
+                    </Button>
+                    {isPaid(inv.status) && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() =>
+                          void api.download(
+                            `/api/v1/finance/receipts/by-invoice/${inv.id}/pdf`,
+                            `receipt-${inv.id}.pdf`,
+                          )
+                        }
+                      >
+                        Download receipt
+                      </Button>
+                    )}
+                  </div>
                 </TD>
               </Row>
             ))}
@@ -222,6 +256,8 @@ function StudentContent() {
         {payError && <Alert tone="error" className="mt-4">{payError}</Alert>}
         {payOk && <Alert tone="success" className="mt-4">{payOk}</Alert>}
       </DataPanel>
+
+      <RoomRequestPanel />
 
       <DataPanel
         title="Notifications"
@@ -255,6 +291,112 @@ function StudentContent() {
         </CardBody>
       </Card>
     </div>
+  );
+}
+
+function RoomRequestPanel() {
+  const [rooms, setRooms] = useState<AvailableRoom[]>([]);
+  const [myRequests, setMyRequests] = useState<RoomRequest[]>([]);
+  const [selectedRoomId, setSelectedRoomId] = useState("");
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [roomsData, requestsData] = await Promise.all([
+        api.get("/api/v1/hostel/rooms/available"),
+        api.get("/api/v1/hostel/room-requests/mine"),
+      ]);
+      setRooms(listItems<AvailableRoom>(roomsData));
+      setMyRequests(listItems<RoomRequest>(requestsData));
+    } catch (err) {
+      setError(errMsg(err));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!selectedRoomId) return;
+    setPending(true);
+    setError(null);
+    try {
+      await api.post("/api/v1/hostel/room-requests", { room_id: selectedRoomId });
+      setSelectedRoomId("");
+      await load();
+    } catch (err) {
+      setError(errMsg(err));
+    } finally {
+      setPending(false);
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader title="Request a room" />
+      <CardBody>
+        <form onSubmit={submit} className="space-y-4">
+          <Field label="Room" htmlFor="room-select">
+            <Select
+              id="room-select"
+              value={selectedRoomId}
+              onChange={(e) => setSelectedRoomId(e.target.value)}
+            >
+              <option value="">Select a room…</option>
+              {rooms.map((r) => (
+                <option key={r.id} value={r.id}>
+                  {r.block_name} - {r.room_no}
+                </option>
+              ))}
+            </Select>
+          </Field>
+          {error && <Alert tone="error">{error}</Alert>}
+          <Button type="submit" loading={pending} disabled={!selectedRoomId}>
+            Request
+          </Button>
+        </form>
+
+        <div className="mt-6">
+          <DataPanel
+            title="My requests"
+            loading={loading}
+            error={null}
+            isEmpty={myRequests.length === 0}
+            emptyLabel="No room requests yet."
+          >
+            <Table>
+              <THead>
+                <HeaderRow>
+                  <TH>Room</TH>
+                  <TH>Requested</TH>
+                  <TH>Status</TH>
+                  <TH>Note</TH>
+                </HeaderRow>
+              </THead>
+              <TBody>
+                {myRequests.map((r) => (
+                  <Row key={r.id}>
+                    <TD className="font-medium">{r.room_name}</TD>
+                    <TD className="text-muted">{new Date(r.requested_on).toLocaleString()}</TD>
+                    <TD>
+                      <StatusPill status={r.status} />
+                    </TD>
+                    <TD className="text-muted">{r.rejection_reason}</TD>
+                  </Row>
+                ))}
+              </TBody>
+            </Table>
+          </DataPanel>
+        </div>
+      </CardBody>
+    </Card>
   );
 }
 

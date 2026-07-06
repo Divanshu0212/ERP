@@ -37,6 +37,22 @@ interface Room {
   occupied_count: number;
 }
 
+interface FeeStructure {
+  id: string;
+  name: string;
+  amount: string;
+  purpose: string;
+}
+
+interface PendingRequest {
+  id: string;
+  student_id: string;
+  room_id: string;
+  room_name: string;
+  status: string;
+  requested_on: string;
+}
+
 function errMsg(e: unknown): string {
   if (e instanceof ApiError) return e.message;
   return e instanceof Error ? e.message : "Something went wrong.";
@@ -115,6 +131,8 @@ function WardenContent() {
       />
 
       <ImportLogs />
+
+      <RoomRequestQueue />
 
       <DataPanel
         title="Pending hostel allocations"
@@ -470,6 +488,116 @@ function ImportLogs() {
             </TBody>
           </Table>
         ))}
+    </DataPanel>
+  );
+}
+
+function RoomRequestQueue() {
+  const [requests, setRequests] = useState<PendingRequest[]>([]);
+  const [feeStructures, setFeeStructures] = useState<FeeStructure[]>([]);
+  const [selectedFee, setSelectedFee] = useState<Record<string, string>>({});
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const [requestsData, feesData] = await Promise.all([
+        api.get("/api/v1/hostel/room-requests?status=pending"),
+        api.get("/api/v1/finance/fee-structures"),
+      ]);
+      setRequests(listItems<PendingRequest>(requestsData));
+      setFeeStructures(listItems<FeeStructure>(feesData));
+    } catch (err) {
+      setError(errMsg(err));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  async function approve(id: string) {
+    const feeStructureId = selectedFee[id];
+    if (!feeStructureId) {
+      setActionError("Pick a fee structure before approving.");
+      return;
+    }
+    setActionError(null);
+    try {
+      await api.post(`/api/v1/hostel/room-requests/${id}/approve`, {
+        fee_structure_id: feeStructureId,
+      });
+      await load();
+    } catch (err) {
+      setActionError(errMsg(err));
+    }
+  }
+
+  async function reject(id: string) {
+    setActionError(null);
+    try {
+      await api.post(`/api/v1/hostel/room-requests/${id}/reject`, {});
+      await load();
+    } catch (err) {
+      setActionError(errMsg(err));
+    }
+  }
+
+  return (
+    <DataPanel
+      title="Pending room requests"
+      loading={loading}
+      error={error}
+      isEmpty={requests.length === 0}
+      emptyLabel="No pending room requests."
+    >
+      {actionError && <Alert tone="error">{actionError}</Alert>}
+      <Table>
+        <THead>
+          <HeaderRow>
+            <TH>Room</TH>
+            <TH>Requested</TH>
+            <TH>Fee</TH>
+            <TH />
+          </HeaderRow>
+        </THead>
+        <TBody>
+          {requests.map((r) => (
+            <Row key={r.id}>
+              <TD className="font-medium">{r.room_name}</TD>
+              <TD className="text-muted">{new Date(r.requested_on).toLocaleString()}</TD>
+              <TD>
+                <Select
+                  value={selectedFee[r.id] ?? ""}
+                  onChange={(e) =>
+                    setSelectedFee((prev) => ({ ...prev, [r.id]: e.target.value }))
+                  }
+                >
+                  <option value="">Select fee…</option>
+                  {feeStructures.map((f) => (
+                    <option key={f.id} value={f.id}>
+                      {f.name} ({f.amount})
+                    </option>
+                  ))}
+                </Select>
+              </TD>
+              <TD className="space-x-2">
+                <Button size="sm" onClick={() => void approve(r.id)}>
+                  Approve
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => void reject(r.id)}>
+                  Reject
+                </Button>
+              </TD>
+            </Row>
+          ))}
+        </TBody>
+      </Table>
     </DataPanel>
   );
 }
