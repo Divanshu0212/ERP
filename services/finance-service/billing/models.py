@@ -24,6 +24,13 @@ class FeeStructure(TenantModel):
     purpose = models.CharField(max_length=100)  # e.g. "hostel", "tuition"
     created_at = models.DateTimeField(auto_now_add=True)
 
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant_id", "purpose"], name="feestructure_tenant_purpose_unique"
+            ),
+        ]
+
     def __str__(self):
         return f"{self.name} ({self.purpose})"
 
