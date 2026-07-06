@@ -286,35 +286,41 @@ class AllocateBulkView(APIView):
         email_cache: dict[str, dict] = {}
         success_count = 0
         fail_count = 0
+        skipped_count = 0
 
         for row_number, (room_id_raw, student_email_raw) in enumerate(rows, start=1):
             error_message = ""
             allocation = None
-            try:
-                if not room_id_raw or not student_email_raw:
-                    raise ValueError("room_id and student_email are both required.")
+            row_status = AllocationImportRow.Status.FAILED
 
-                if student_email_raw not in email_cache:
-                    email_cache[student_email_raw] = resolve_user_by_email(
-                        student_email_raw, auth_header
-                    )
-                student = email_cache[student_email_raw]
+            if not room_id_raw or not student_email_raw:
+                error_message = "Row skipped: no email provided."
+                row_status = AllocationImportRow.Status.SKIPPED
+                skipped_count += 1
+            else:
+                try:
+                    if student_email_raw not in email_cache:
+                        email_cache[student_email_raw] = resolve_user_by_email(
+                            student_email_raw, auth_header
+                        )
+                    student = email_cache[student_email_raw]
 
-                room_uuid = uuid_lib.UUID(room_id_raw)
-                allocation = create_allocation(room_uuid, student["id"], tenant_id)
-                success_count += 1
-            except LookupFailed as exc:
-                error_message = str(exc)
-                fail_count += 1
-            except Http404:
-                error_message = f"Room {room_id_raw} not found."
-                fail_count += 1
-            except RoomFullError as exc:
-                error_message = str(exc)
-                fail_count += 1
-            except ValueError as exc:
-                error_message = str(exc)
-                fail_count += 1
+                    room_uuid = uuid_lib.UUID(room_id_raw)
+                    allocation = create_allocation(room_uuid, student["id"], tenant_id)
+                    row_status = AllocationImportRow.Status.SUCCESS
+                    success_count += 1
+                except LookupFailed as exc:
+                    error_message = str(exc)
+                    fail_count += 1
+                except Http404:
+                    error_message = f"Room {room_id_raw} not found."
+                    fail_count += 1
+                except RoomFullError as exc:
+                    error_message = str(exc)
+                    fail_count += 1
+                except ValueError as exc:
+                    error_message = str(exc)
+                    fail_count += 1
 
             AllocationImportRow.objects.create(
                 tenant_id=tenant_id,
@@ -322,18 +328,15 @@ class AllocateBulkView(APIView):
                 row_number=row_number,
                 room_id_raw=room_id_raw,
                 student_email_raw=student_email_raw,
-                status=(
-                    AllocationImportRow.Status.SUCCESS
-                    if allocation
-                    else AllocationImportRow.Status.FAILED
-                ),
+                status=row_status,
                 error_message=error_message,
                 allocation=allocation,
             )
 
         batch.success_count = success_count
         batch.fail_count = fail_count
-        batch.save(update_fields=["success_count", "fail_count"])
+        batch.skipped_count = skipped_count
+        batch.save(update_fields=["success_count", "fail_count", "skipped_count"])
 
         return ok(
             {
@@ -341,6 +344,7 @@ class AllocateBulkView(APIView):
                 "total_rows": len(rows),
                 "success_count": success_count,
                 "fail_count": fail_count,
+                "skipped_count": skipped_count,
             },
             message="Bulk import processed.",
             status=201,

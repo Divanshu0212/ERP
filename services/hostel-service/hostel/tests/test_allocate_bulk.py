@@ -131,6 +131,33 @@ def test_mixed_success_and_failure(mock_resolve):
     assert rows[3].status == "failed" and "no user found" in rows[3].error_message.lower()
 
 
+@patch("hostel.views.resolve_user_by_email")
+def test_blank_email_row_is_skipped_not_failed(mock_resolve):
+    tenant_id = uuid.uuid4()
+    room = _make_room(tenant_id, capacity=2, occupied_count=0, room_no="101")
+    mock_resolve.return_value = {
+        "id": str(uuid.uuid4()),
+        "email": "a@example.com",
+        "role": "student",
+    }
+    client = _auth_client(tenant_id, role="warden")
+
+    buf, name = _csv_file([(str(room.id), "")])
+    response = _upload(client, buf, name)
+
+    assert response.status_code == 201, response.content
+    body = response.json()["data"]
+    assert body["total_rows"] == 1
+    assert body["success_count"] == 0
+    assert body["fail_count"] == 0
+    assert body["skipped_count"] == 1
+
+    batch = AllocationImportBatch.all_objects.get(id=body["batch_id"])
+    row = batch.rows.get(row_number=1)
+    assert row.status == "skipped"
+    assert "no email" in row.error_message.lower()
+
+
 def test_rejects_wrong_extension():
     tenant_id = uuid.uuid4()
     client = _auth_client(tenant_id, role="warden")

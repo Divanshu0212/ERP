@@ -81,7 +81,15 @@ class AllocationImportRowSerializer(serializers.ModelSerializer):
 class AllocationImportBatchSerializer(serializers.ModelSerializer):
     class Meta:
         model = AllocationImportBatch
-        fields = ["id", "filename", "total_rows", "success_count", "fail_count", "created_at"]
+        fields = [
+            "id",
+            "filename",
+            "total_rows",
+            "success_count",
+            "fail_count",
+            "skipped_count",
+            "created_at",
+        ]
         read_only_fields = fields
 
 

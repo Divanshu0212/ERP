@@ -174,9 +174,9 @@ class Complaint(TenantModel):
 class AllocationImportBatch(TenantModel):
     """One warden-initiated bulk-allocation upload (CSV or XLSX).
 
-    ``success_count``/``fail_count`` are denormalized onto the batch (rather
-    than always aggregating ``rows``) so the Import Logs list view can show
-    them without an extra query per batch.
+    ``success_count``/``fail_count``/``skipped_count`` are denormalized onto the
+    batch (rather than always aggregating ``rows``) so the Import Logs list view
+    can show them without an extra query per batch.
     """
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -187,6 +187,7 @@ class AllocationImportBatch(TenantModel):
     total_rows = models.PositiveIntegerField(default=0)
     success_count = models.PositiveIntegerField(default=0)
     fail_count = models.PositiveIntegerField(default=0)
+    skipped_count = models.PositiveIntegerField(default=0)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -202,6 +203,7 @@ class AllocationImportRow(TenantModel):
     class Status(models.TextChoices):
         SUCCESS = "success", "Success"
         FAILED = "failed", "Failed"
+        SKIPPED = "skipped", "Skipped"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     batch = models.ForeignKey(AllocationImportBatch, on_delete=models.CASCADE, related_name="rows")
