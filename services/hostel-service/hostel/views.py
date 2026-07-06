@@ -24,7 +24,14 @@ from django.db.models import F
 from django.http import Http404
 from django.shortcuts import get_object_or_404
 from hostel.lookups import LookupFailed, resolve_user_by_email
-from hostel.models import Allocation, AllocationImportBatch, AllocationImportRow, Block, Room, RoomRequest
+from hostel.models import (
+    Allocation,
+    AllocationImportBatch,
+    AllocationImportRow,
+    Block,
+    Room,
+    RoomRequest,
+)
 from hostel.serializers import (
     AllocateRequestSerializer,
     AllocationImportBatchDetailSerializer,

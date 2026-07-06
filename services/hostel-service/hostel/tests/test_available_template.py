@@ -11,7 +11,7 @@ import pytest
 
 pytestmark = pytest.mark.django_db
 
-from hostel.models import Room
+from hostel.models import Room  # noqa: E402
 from hostel.tests.test_allocate import _auth_client, _make_block, _make_room  # noqa: E402
 
 
