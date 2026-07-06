@@ -9,12 +9,14 @@ from hostel.views import (
     AllocationImportLogDetailView,
     AllocationImportLogListView,
     AllocationListView,
+    ApproveRoomRequestView,
     AvailableRoomsTemplateView,
     AvailableRoomsView,
     BlockListCreateView,
     MyRoomRequestsView,
+    RejectRoomRequestView,
     RoomListCreateView,
-    RoomRequestCreateView,
+    RoomRequestListCreateView,
 )
 
 urlpatterns = [
@@ -40,5 +42,15 @@ urlpatterns = [
         name="allocation-import-log-detail",
     ),
     path("room-requests/mine", MyRoomRequestsView.as_view(), name="room-request-mine"),
-    path("room-requests", RoomRequestCreateView.as_view(), name="room-request-create"),
+    path("room-requests", RoomRequestListCreateView.as_view(), name="room-request-list-create"),
+    path(
+        "room-requests/<uuid:pk>/approve",
+        ApproveRoomRequestView.as_view(),
+        name="room-request-approve",
+    ),
+    path(
+        "room-requests/<uuid:pk>/reject",
+        RejectRoomRequestView.as_view(),
+        name="room-request-reject",
+    ),
 ]

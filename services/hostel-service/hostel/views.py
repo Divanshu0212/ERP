@@ -20,10 +20,12 @@ import io
 import uuid as uuid_lib
 
 import openpyxl
+import requests  # noqa: F401 -- test patch target: hostel.lookups shares this module object
 from django.db.models import F
 from django.http import Http404
 from django.shortcuts import get_object_or_404
-from hostel.lookups import LookupFailed, resolve_user_by_email
+from django.utils import timezone
+from hostel.lookups import LookupFailed, resolve_institution_name, resolve_user_by_email
 from hostel.models import (
     Allocation,
     AllocationImportBatch,
@@ -40,7 +42,9 @@ from hostel.serializers import (
     BlockCreateSerializer,
     BlockSerializer,
     RoomCreateSerializer,
+    RoomRequestApproveSerializer,
     RoomRequestCreateSerializer,
+    RoomRequestRejectSerializer,
     RoomRequestSerializer,
     RoomSerializer,
 )
@@ -172,17 +176,23 @@ class AllocationListView(ListAPIView):
         return Allocation.objects.all().order_by("-created_at")
 
 
-class RoomRequestCreateView(APIView):
-    """POST /api/v1/hostel/room-requests — student requests a specific room.
+class RoomRequestListCreateView(APIView):
+    """GET /api/v1/hostel/room-requests?status=pending — warden queue.
+    POST /api/v1/hostel/room-requests — student requests a specific room.
 
-    Only checks the room has free capacity at request time (same
-    ``is_available`` check ``create_allocation`` uses) — this is advisory,
-    not a reservation; the authoritative capacity check + row lock happens
-    again in ``create_allocation`` at approval time, so a room that fills up
-    between request and approval correctly 400s the approval instead.
+    ``status`` query param on GET defaults to ``pending`` (the only queue a
+    warden normally works from) but accepts any RoomRequest.Status value.
     """
 
-    permission_classes = [role_required("student")]
+    def get_permissions(self):
+        if self.request.method == "POST":
+            return [role_required("student")()]
+        return [role_required("warden", "admin")()]
+
+    def get(self, request):
+        status_filter = request.query_params.get("status", RoomRequest.Status.PENDING)
+        requests_qs = RoomRequest.objects.filter(status=status_filter).order_by("-requested_on")
+        return ok(RoomRequestSerializer(requests_qs, many=True).data)
 
     def post(self, request):
         serializer = RoomRequestCreateSerializer(data=request.data)
@@ -204,6 +214,74 @@ class RoomRequestCreateView(APIView):
             message="Room request submitted.",
             status=201,
         )
+
+
+class ApproveRoomRequestView(APIView):
+    """POST /api/v1/hostel/room-requests/<id>/approve — warden approves.
+
+    Calls create_allocation() unchanged (same lock/capacity-check/atomic-
+    commit/outbox path AllocateView uses), passing through the chosen
+    fee_structure_id and this tenant's institution name so finance-service's
+    consumer can price and label the resulting invoice correctly. Marks the
+    RoomRequest approved in the SAME response cycle as create_allocation's own
+    atomic block — a RoomRequest left ``pending`` after a successful
+    Allocation would be a confusing, permanently-stuck state for the warden UI.
+    """
+
+    permission_classes = [role_required("warden", "admin")]
+
+    def post(self, request, pk):
+        serializer = RoomRequestApproveSerializer(data=request.data)
+        if not serializer.is_valid():
+            return fail("Invalid approval payload.", errors=serializer.errors, status=400)
+
+        room_request = get_object_or_404(
+            RoomRequest.objects.filter(status=RoomRequest.Status.PENDING), id=pk
+        )
+
+        university_name = resolve_institution_name(request.META.get("HTTP_AUTHORIZATION"))
+
+        try:
+            create_allocation(
+                room_request.room_id,
+                room_request.student_id,
+                get_current_tenant(),
+                fee_structure_id=serializer.validated_data["fee_structure_id"],
+                university_name=university_name,
+            )
+        except RoomFullError:
+            return fail("Room is no longer available.", status=400)
+
+        room_request.status = RoomRequest.Status.APPROVED
+        room_request.decided_on = timezone.now()
+        room_request.decided_by = request.user.id
+        room_request.save(update_fields=["status", "decided_on", "decided_by"])
+
+        return ok(RoomRequestSerializer(room_request).data, message="Room request approved.")
+
+
+class RejectRoomRequestView(APIView):
+    """POST /api/v1/hostel/room-requests/<id>/reject — warden rejects."""
+
+    permission_classes = [role_required("warden", "admin")]
+
+    def post(self, request, pk):
+        serializer = RoomRequestRejectSerializer(data=request.data)
+        if not serializer.is_valid():
+            return fail("Invalid rejection payload.", errors=serializer.errors, status=400)
+
+        room_request = get_object_or_404(
+            RoomRequest.objects.filter(status=RoomRequest.Status.PENDING), id=pk
+        )
+        room_request.status = RoomRequest.Status.REJECTED
+        room_request.decided_on = timezone.now()
+        room_request.decided_by = request.user.id
+        room_request.rejection_reason = serializer.validated_data["rejection_reason"]
+        room_request.save(
+            update_fields=["status", "decided_on", "decided_by", "rejection_reason"]
+        )
+
+        return ok(RoomRequestSerializer(room_request).data, message="Room request rejected.")
 
 
 class MyRoomRequestsView(ListAPIView):
