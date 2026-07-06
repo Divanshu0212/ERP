@@ -117,6 +117,43 @@ def test_download_receipt_pdf():
     assert response.content.startswith(b"%PDF")
 
 
+def test_student_cannot_download_another_students_receipt():
+    tenant_id = uuid.uuid4()
+    owner_id = uuid.uuid4()
+    invoice, payment = _make_paid_invoice_and_payment(tenant_id, owner_id)
+    receipt = generate_receipt(payment)
+
+    other_student = _auth_client(tenant_id, role="student", user_id=uuid.uuid4())
+    response = other_student.get(f"/api/v1/finance/receipts/{receipt.id}/pdf")
+
+    assert response.status_code == 403, response.content
+
+
+def test_warden_can_download_any_students_receipt():
+    tenant_id = uuid.uuid4()
+    student_id = uuid.uuid4()
+    invoice, payment = _make_paid_invoice_and_payment(tenant_id, student_id)
+    receipt = generate_receipt(payment)
+
+    warden = _auth_client(tenant_id, role="warden")
+    response = warden.get(f"/api/v1/finance/receipts/{receipt.id}/pdf")
+
+    assert response.status_code == 200, response.content
+    assert response.content.startswith(b"%PDF")
+
+
+def test_student_cannot_download_another_students_receipt_by_invoice():
+    tenant_id = uuid.uuid4()
+    owner_id = uuid.uuid4()
+    invoice, payment = _make_paid_invoice_and_payment(tenant_id, owner_id)
+    generate_receipt(payment)
+
+    other_student = _auth_client(tenant_id, role="student", user_id=uuid.uuid4())
+    response = other_student.get(f"/api/v1/finance/receipts/by-invoice/{invoice.id}/pdf")
+
+    assert response.status_code == 403, response.content
+
+
 def test_verify_endpoint_valid_token():
     tenant_id = uuid.uuid4()
     student_id = uuid.uuid4()

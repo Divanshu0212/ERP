@@ -105,6 +105,20 @@ class FeeStructureListCreateView(ListAPIView):
         )
 
 
+def _deny_if_not_owner(request, receipt: Receipt):
+    """Ownership gate for receipt-PDF downloads.
+
+    A student may download ONLY their own receipt (the one whose invoice's
+    ``student_id`` is their own user id). Warden/admin may download ANY receipt
+    in their tenant — they need this for verification/audit. Returns a 403
+    ``fail`` response when a student requests someone else's receipt, else None.
+    """
+    if getattr(request.user, "role", None) == "student":
+        if str(receipt.payment.invoice.student_id) != str(request.user.id):
+            return fail("You may only download your own receipt.", status=403)
+    return None
+
+
 def _payment_outcome(payment: Payment) -> dict:
     return {
         "invoice_id": str(payment.invoice_id),
@@ -254,6 +268,9 @@ class ReceiptPdfView(APIView):
         from django.http import HttpResponse
 
         receipt = get_object_or_404(Receipt.objects, id=receipt_id)
+        denied = _deny_if_not_owner(request, receipt)
+        if denied is not None:
+            return denied
         response = HttpResponse(bytes(receipt.pdf_data), content_type="application/pdf")
         response["Content-Disposition"] = f'inline; filename="{receipt.receipt_no}.pdf"'
         return response
@@ -313,6 +330,9 @@ class ReceiptPdfByInvoiceView(APIView):
         from django.http import HttpResponse
 
         receipt = get_object_or_404(Receipt.objects, payment__invoice_id=invoice_id)
+        denied = _deny_if_not_owner(request, receipt)
+        if denied is not None:
+            return denied
         response = HttpResponse(bytes(receipt.pdf_data), content_type="application/pdf")
         response["Content-Disposition"] = f'inline; filename="{receipt.receipt_no}.pdf"'
         return response
