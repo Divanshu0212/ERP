@@ -9,6 +9,7 @@ from hostel.views import (
     AllocationImportLogDetailView,
     AllocationImportLogListView,
     AllocationListView,
+    AvailableRoomsTemplateView,
     AvailableRoomsView,
     BlockListCreateView,
     RoomListCreateView,
@@ -17,6 +18,11 @@ from hostel.views import (
 urlpatterns = [
     path("allocate", AllocateView.as_view(), name="allocate"),
     path("allocate/bulk", AllocateBulkView.as_view(), name="allocate-bulk"),
+    path(
+        "rooms/available-template",
+        AvailableRoomsTemplateView.as_view(),
+        name="rooms-available-template",
+    ),
     path("rooms/available", AvailableRoomsView.as_view(), name="rooms-available"),
     path("rooms", RoomListCreateView.as_view(), name="room-list-create"),
     path("blocks", BlockListCreateView.as_view(), name="block-list-create"),

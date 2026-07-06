@@ -58,6 +58,38 @@ class AvailableRoomsView(ListAPIView):
         return Room.objects.filter(occupied_count__lt=F("capacity")).order_by("room_no")
 
 
+class AvailableRoomsTemplateView(APIView):
+    """GET /api/v1/hostel/rooms/available-template — CSV download of available
+    rooms, pre-filled with room_id/room_name so a warden only has to type in
+    student_email before re-uploading to /api/v1/hostel/allocate/bulk.
+
+    Returns a raw text/csv HttpResponse, not the JSON envelope — this is a file
+    download, not a data API call, same as the frontend's earlier static-asset
+    link it replaces.
+    """
+
+    permission_classes = [role_required("warden", "admin")]
+
+    def get(self, request):
+        from django.http import HttpResponse
+
+        rooms = (
+            Room.objects.filter(occupied_count__lt=F("capacity"))
+            .select_related("block")
+            .order_by("block__name", "room_no")
+        )
+
+        buffer = io.StringIO()
+        writer = csv.writer(buffer)
+        writer.writerow(["room_id", "room_name", "student_email"])
+        for room in rooms:
+            writer.writerow([str(room.id), f"{room.block.name} - {room.room_no}", ""])
+
+        response = HttpResponse(buffer.getvalue(), content_type="text/csv")
+        response["Content-Disposition"] = 'attachment; filename="allocation-template.csv"'
+        return response
+
+
 class BlockListCreateView(ListCreateAPIView):
     """GET lists blocks (tenant-scoped, paginated); POST creates one.
 
