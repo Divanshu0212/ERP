@@ -131,3 +131,11 @@ class RoomRequestSerializer(serializers.ModelSerializer):
 
     def get_room_name(self, obj):
         return f"{obj.room.block.name} - {obj.room.room_no}"
+
+
+class RoomRequestApproveSerializer(serializers.Serializer):
+    fee_structure_id = serializers.UUIDField()
+
+
+class RoomRequestRejectSerializer(serializers.Serializer):
+    rejection_reason = serializers.CharField(max_length=500, required=False, default="")

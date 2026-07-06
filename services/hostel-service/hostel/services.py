@@ -1,16 +1,26 @@
 """Allocation creation, shared by the single-create and bulk-import
-endpoints (hostel/views.py: AllocateView, AllocateBulkView).
+endpoints (hostel/views.py: AllocateView, AllocateBulkView) and by
+room-request approval (hostel/views.py: ApproveRoomRequestView).
 
-Extracted from AllocateView (Task 4.8) unchanged, so AllocateBulkView can
-reuse the exact same lock/capacity-check/atomic-commit/outbox logic per
-row instead of duplicating it. ``select_for_update()`` on the Room row
-prevents concurrent over-allocation: two simultaneous calls against the
-same last-open bed serialize on the row lock, so the second one observes
-the incremented ``occupied_count`` and correctly raises ``RoomFullError``
+Extracted from AllocateView (Task 4.8) unchanged, so every caller reuses the
+exact same lock/capacity-check/atomic-commit/outbox logic per allocation
+instead of duplicating it. ``select_for_update()`` on the Room row prevents
+concurrent over-allocation: two simultaneous calls against the same
+last-open bed serialize on the row lock, so the second one observes the
+incremented ``occupied_count`` and correctly raises ``RoomFullError``
 instead of double-booking. State change and the ``hostel.allocation.
 requested`` outbox event commit or roll back together (transactional-
 outbox guarantee) — nothing here talks to RabbitMQ directly,
 ``drain_outbox_task`` relays it later.
+
+``fee_structure_id``/``university_name`` are optional, warden-approval-only
+extras: they flow straight into the outbox event payload so finance-
+service's consumer can price the resulting invoice from a configurable
+``FeeStructure`` and stamp the institution's display name onto it, instead
+of the old hardcoded ``HOSTEL_FEE_AMOUNT`` constant. Callers that don't pass
+them (the plain warden AllocateView/AllocateBulkView path) get ``None``/``""``,
+and finance-service's consumer falls back to its existing hardcoded default
+in that case — see Task 4.
 """
 
 from django.db import transaction
@@ -23,7 +33,13 @@ class RoomFullError(Exception):
     """Raised when the target room has no free capacity."""
 
 
-def create_allocation(room_id, student_id, tenant_id) -> Allocation:
+def create_allocation(
+    room_id,
+    student_id,
+    tenant_id,
+    fee_structure_id=None,
+    university_name="",
+) -> Allocation:
     """Reserve a room seat and create a pending Allocation for student_id.
 
     Raises ``django.http.Http404`` if room_id doesn't resolve to a room in
@@ -53,6 +69,8 @@ def create_allocation(room_id, student_id, tenant_id) -> Allocation:
                 "allocation_id": str(allocation.id),
                 "student_id": str(allocation.student_id),
                 "room_id": str(room.id),
+                "fee_structure_id": str(fee_structure_id) if fee_structure_id else None,
+                "university_name": university_name,
             },
         )
 

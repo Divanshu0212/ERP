@@ -106,6 +106,8 @@ def test_allocating_available_room_creates_pending_allocation_and_emits_event(mo
         "allocation_id": str(allocation.id),
         "student_id": str(student_id),
         "room_id": str(room.id),
+        "fee_structure_id": None,
+        "university_name": "",
     }
 
 

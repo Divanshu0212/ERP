@@ -67,3 +67,36 @@ def resolve_user_by_email(email: str, auth_header: str | None) -> dict:
         )
 
     return envelope["data"]
+
+
+def resolve_institution_name(auth_header: str | None) -> str:
+    """Resolve the caller's own institution display name via auth-service.
+
+    Mirrors resolve_user_by_email's forward-the-caller's-token pattern:
+    GET /api/v1/auth/institution resolves Institution.objects.get(pk=
+    request.user.tenant_id) on auth-service's side from the JWT's own
+    ``tenant`` claim, so the forwarded warden token is sufficient — no
+    separate service-to-service credential needed. Returns "" (rather than
+    raising) on any failure: a missing university name on the receipt is a
+    cosmetic degradation, not a reason to fail the approval.
+    """
+    url = f"{settings.GATEWAY_URL}/api/v1/auth/institution"
+    headers = {"Authorization": auth_header} if auth_header else {}
+
+    try:
+        response = requests.get(url, headers=headers, timeout=5)
+    except requests.RequestException:
+        return ""
+
+    if not response.ok:
+        return ""
+
+    try:
+        envelope = response.json()
+    except ValueError:
+        return ""
+
+    if not envelope.get("success"):
+        return ""
+
+    return envelope.get("data", {}).get("name", "")
