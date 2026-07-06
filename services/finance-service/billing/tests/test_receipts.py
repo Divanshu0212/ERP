@@ -170,3 +170,16 @@ def test_student_role_forbidden_from_verify():
     )
 
     assert response.status_code == 403
+
+
+def test_download_receipt_pdf_by_invoice_id():
+    tenant_id = uuid.uuid4()
+    student_id = uuid.uuid4()
+    invoice, payment = _make_paid_invoice_and_payment(tenant_id, student_id)
+    generate_receipt(payment)
+
+    client = _auth_client(tenant_id, role="student", user_id=student_id)
+    response = client.get(f"/api/v1/finance/receipts/by-invoice/{invoice.id}/pdf")
+
+    assert response.status_code == 200
+    assert response.content.startswith(b"%PDF")

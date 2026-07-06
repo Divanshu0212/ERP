@@ -8,6 +8,7 @@ from billing.views import (
     InvoiceListCreateView,
     PayView,
     RazorpayOrderView,
+    ReceiptPdfByInvoiceView,
     ReceiptPdfView,
     VerifyReceiptView,
 )
@@ -23,5 +24,10 @@ urlpatterns = [
     path("pay", PayView.as_view(), name="pay"),
     path("fee-structures", FeeStructureListCreateView.as_view(), name="fee-structure-list-create"),
     path("receipts/verify", VerifyReceiptView.as_view(), name="receipt-verify"),
+    path(
+        "receipts/by-invoice/<uuid:invoice_id>/pdf",
+        ReceiptPdfByInvoiceView.as_view(),
+        name="receipt-pdf-by-invoice",
+    ),
     path("receipts/<uuid:receipt_id>/pdf", ReceiptPdfView.as_view(), name="receipt-pdf"),
 ]
