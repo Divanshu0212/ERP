@@ -109,12 +109,13 @@ def _deny_if_not_owner(request, receipt: Receipt):
     """Ownership gate for receipt-PDF downloads.
 
     A student may download ONLY their own receipt (the one whose invoice's
-    ``student_id`` is their own user id). Warden/admin may download ANY receipt
-    in their tenant — they need this for verification/audit. Returns a 403
-    ``fail`` response when a student requests someone else's receipt, else None.
+    ``student_user_code`` is their own user id). Warden/admin may download ANY
+    receipt in their tenant — they need this for verification/audit. Returns
+    a 403 ``fail`` response when a student requests someone else's receipt,
+    else None.
     """
     if getattr(request.user, "role", None) == "student":
-        if str(receipt.payment.invoice.student_id) != str(request.user.id):
+        if receipt.payment.invoice.student_user_code != str(request.user.id):
             return fail("You may only download your own receipt.", status=403)
     return None
 
@@ -224,7 +225,7 @@ class PayView(APIView):
                     tenant_id=str(invoice.tenant_id),
                     payload={
                         "invoice_id": str(invoice.id),
-                        "student_id": str(invoice.student_id),
+                        "student_user_code": invoice.student_user_code,
                         "purpose": invoice.purpose,
                         "amount": str(invoice.amount),
                     },
@@ -247,7 +248,7 @@ class PayView(APIView):
                     tenant_id=str(invoice.tenant_id),
                     payload={
                         "invoice_id": str(invoice.id),
-                        "student_id": str(invoice.student_id),
+                        "student_user_code": invoice.student_user_code,
                         "purpose": invoice.purpose,
                     },
                 )

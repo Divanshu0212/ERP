@@ -32,10 +32,10 @@ def _auth_client(tenant_id, **kwargs):
     return client
 
 
-def _make_invoice(tenant_id, amount="100.00", purpose="hostel", student_id=None):
+def _make_invoice(tenant_id, amount="100.00", purpose="hostel", student_user_code=None):
     return Invoice.all_objects.create(
         tenant_id=tenant_id,
-        student_id=student_id or uuid.uuid4(),
+        student_user_code=student_user_code or "STU-100",
         amount=amount,
         purpose=purpose,
     )

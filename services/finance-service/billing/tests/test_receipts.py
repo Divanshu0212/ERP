@@ -33,10 +33,10 @@ def _auth_client(tenant_id, **kwargs):
     return client
 
 
-def _make_paid_invoice_and_payment(tenant_id, student_id):
+def _make_paid_invoice_and_payment(tenant_id, student_user_code):
     invoice = Invoice.all_objects.create(
         tenant_id=tenant_id,
-        student_id=student_id,
+        student_user_code=student_user_code,
         amount=Decimal("5000.00"),
         purpose="hostel",
         status=Invoice.Status.PAID,
@@ -54,8 +54,8 @@ def _make_paid_invoice_and_payment(tenant_id, student_id):
 
 def test_generate_receipt_produces_pdf_bytes_and_verifiable_token():
     tenant_id = uuid.uuid4()
-    student_id = uuid.uuid4()
-    invoice, payment = _make_paid_invoice_and_payment(tenant_id, student_id)
+    student_user_code = "STU-100"
+    invoice, payment = _make_paid_invoice_and_payment(tenant_id, student_user_code)
 
     receipt = generate_receipt(payment)
 
@@ -67,8 +67,8 @@ def test_generate_receipt_produces_pdf_bytes_and_verifiable_token():
 
 def test_verify_token_rejects_tampered_token():
     tenant_id = uuid.uuid4()
-    student_id = uuid.uuid4()
-    invoice, payment = _make_paid_invoice_and_payment(tenant_id, student_id)
+    student_user_code = "STU-100"
+    invoice, payment = _make_paid_invoice_and_payment(tenant_id, student_user_code)
     receipt = generate_receipt(payment)
 
     tampered = receipt.verification_token[:-1] + (
@@ -80,16 +80,16 @@ def test_verify_token_rejects_tampered_token():
 
 def test_pay_creates_receipt_synchronously():
     tenant_id = uuid.uuid4()
-    student_id = uuid.uuid4()
+    student_user_code = "STU-100"
     invoice = Invoice.all_objects.create(
         tenant_id=tenant_id,
-        student_id=student_id,
+        student_user_code=student_user_code,
         amount=Decimal("100.00"),
         purpose="hostel",
         status=Invoice.Status.PENDING,
         university_name="Test University",
     )
-    client = _auth_client(tenant_id, role="student", user_id=student_id)
+    client = _auth_client(tenant_id, role="student", user_id=student_user_code)
 
     response = client.post(
         "/api/v1/finance/pay",
@@ -105,11 +105,11 @@ def test_pay_creates_receipt_synchronously():
 
 def test_download_receipt_pdf():
     tenant_id = uuid.uuid4()
-    student_id = uuid.uuid4()
-    invoice, payment = _make_paid_invoice_and_payment(tenant_id, student_id)
+    student_user_code = "STU-100"
+    invoice, payment = _make_paid_invoice_and_payment(tenant_id, student_user_code)
     receipt = generate_receipt(payment)
 
-    client = _auth_client(tenant_id, role="student", user_id=student_id)
+    client = _auth_client(tenant_id, role="student", user_id=student_user_code)
     response = client.get(f"/api/v1/finance/receipts/{receipt.id}/pdf")
 
     assert response.status_code == 200
@@ -119,11 +119,11 @@ def test_download_receipt_pdf():
 
 def test_student_cannot_download_another_students_receipt():
     tenant_id = uuid.uuid4()
-    owner_id = uuid.uuid4()
-    invoice, payment = _make_paid_invoice_and_payment(tenant_id, owner_id)
+    owner_code = "STU-100"
+    invoice, payment = _make_paid_invoice_and_payment(tenant_id, owner_code)
     receipt = generate_receipt(payment)
 
-    other_student = _auth_client(tenant_id, role="student", user_id=uuid.uuid4())
+    other_student = _auth_client(tenant_id, role="student", user_id="STU-200")
     response = other_student.get(f"/api/v1/finance/receipts/{receipt.id}/pdf")
 
     assert response.status_code == 403, response.content
@@ -131,8 +131,8 @@ def test_student_cannot_download_another_students_receipt():
 
 def test_warden_can_download_any_students_receipt():
     tenant_id = uuid.uuid4()
-    student_id = uuid.uuid4()
-    invoice, payment = _make_paid_invoice_and_payment(tenant_id, student_id)
+    student_user_code = "STU-100"
+    invoice, payment = _make_paid_invoice_and_payment(tenant_id, student_user_code)
     receipt = generate_receipt(payment)
 
     warden = _auth_client(tenant_id, role="warden")
@@ -144,11 +144,11 @@ def test_warden_can_download_any_students_receipt():
 
 def test_student_cannot_download_another_students_receipt_by_invoice():
     tenant_id = uuid.uuid4()
-    owner_id = uuid.uuid4()
-    invoice, payment = _make_paid_invoice_and_payment(tenant_id, owner_id)
+    owner_code = "STU-100"
+    invoice, payment = _make_paid_invoice_and_payment(tenant_id, owner_code)
     generate_receipt(payment)
 
-    other_student = _auth_client(tenant_id, role="student", user_id=uuid.uuid4())
+    other_student = _auth_client(tenant_id, role="student", user_id="STU-200")
     response = other_student.get(f"/api/v1/finance/receipts/by-invoice/{invoice.id}/pdf")
 
     assert response.status_code == 403, response.content
@@ -156,8 +156,8 @@ def test_student_cannot_download_another_students_receipt_by_invoice():
 
 def test_verify_endpoint_valid_token():
     tenant_id = uuid.uuid4()
-    student_id = uuid.uuid4()
-    invoice, payment = _make_paid_invoice_and_payment(tenant_id, student_id)
+    student_user_code = "STU-100"
+    invoice, payment = _make_paid_invoice_and_payment(tenant_id, student_user_code)
     receipt = generate_receipt(payment)
 
     warden_client = _auth_client(tenant_id, role="warden")
@@ -185,8 +185,8 @@ def test_verify_endpoint_invalid_token():
 
 def test_verify_endpoint_cross_tenant_token_reads_as_invalid_not_500():
     other_tenant_id = uuid.uuid4()
-    other_student_id = uuid.uuid4()
-    invoice, payment = _make_paid_invoice_and_payment(other_tenant_id, other_student_id)
+    other_student_code = "STU-100"
+    invoice, payment = _make_paid_invoice_and_payment(other_tenant_id, other_student_code)
     receipt = generate_receipt(payment)
 
     warden_tenant_id = uuid.uuid4()
@@ -211,11 +211,11 @@ def test_student_role_forbidden_from_verify():
 
 def test_download_receipt_pdf_by_invoice_id():
     tenant_id = uuid.uuid4()
-    student_id = uuid.uuid4()
-    invoice, payment = _make_paid_invoice_and_payment(tenant_id, student_id)
+    student_user_code = "STU-100"
+    invoice, payment = _make_paid_invoice_and_payment(tenant_id, student_user_code)
     generate_receipt(payment)
 
-    client = _auth_client(tenant_id, role="student", user_id=student_id)
+    client = _auth_client(tenant_id, role="student", user_id=student_user_code)
     response = client.get(f"/api/v1/finance/receipts/by-invoice/{invoice.id}/pdf")
 
     assert response.status_code == 200

@@ -30,10 +30,12 @@ from suerp_common.outbox import OutboxEvent
 pytestmark = pytest.mark.django_db
 
 
-def _allocation_requested_event(tenant_id, student_id=None, allocation_id=None, room_id=None):
+def _allocation_requested_event(
+    tenant_id, student_user_code=None, allocation_id=None, room_id=None
+):
     payload = {
         "allocation_id": str(allocation_id or uuid.uuid4()),
-        "student_id": str(student_id or uuid.uuid4()),
+        "student_user_code": student_user_code or "STU-100",
         "room_id": str(room_id or uuid.uuid4()),
     }
     return build_event("hostel.allocation.requested", tenant_id=str(tenant_id), payload=payload)
@@ -41,15 +43,15 @@ def _allocation_requested_event(tenant_id, student_id=None, allocation_id=None, 
 
 def test_handling_allocation_requested_creates_pending_hostel_invoice_and_emits_event():
     tenant_id = uuid.uuid4()
-    student_id = uuid.uuid4()
+    student_user_code = "STU-100"
     allocation_id = uuid.uuid4()
     event = _allocation_requested_event(
-        tenant_id, student_id=student_id, allocation_id=allocation_id
+        tenant_id, student_user_code=student_user_code, allocation_id=allocation_id
     )
 
     handle_allocation_requested(event)
 
-    invoices = Invoice.all_objects.filter(tenant_id=tenant_id, student_id=student_id)
+    invoices = Invoice.all_objects.filter(tenant_id=tenant_id, student_user_code=student_user_code)
     assert invoices.count() == 1
     invoice = invoices.first()
     assert invoice.amount == Decimal("5000.00")
@@ -61,7 +63,7 @@ def test_handling_allocation_requested_creates_pending_hostel_invoice_and_emits_
     emitted = events.first()
     assert str(emitted.tenant_id) == str(tenant_id)
     assert emitted.payload["invoice_id"] == str(invoice.id)
-    assert emitted.payload["student_id"] == str(student_id)
+    assert emitted.payload["student_user_code"] == student_user_code
     assert emitted.payload["allocation_id"] == str(allocation_id)
     assert emitted.payload["amount"] == "5000.00"
     assert emitted.payload["purpose"] == "hostel"
@@ -69,13 +71,13 @@ def test_handling_allocation_requested_creates_pending_hostel_invoice_and_emits_
 
 def test_handling_same_event_twice_is_idempotent():
     tenant_id = uuid.uuid4()
-    student_id = uuid.uuid4()
-    event = _allocation_requested_event(tenant_id, student_id=student_id)
+    student_user_code = "STU-100"
+    event = _allocation_requested_event(tenant_id, student_user_code=student_user_code)
 
     handle_allocation_requested(event)
     handle_allocation_requested(event)  # duplicate delivery, same event_id
 
-    invoices = Invoice.all_objects.filter(tenant_id=tenant_id, student_id=student_id)
+    invoices = Invoice.all_objects.filter(tenant_id=tenant_id, student_user_code=student_user_code)
     assert invoices.count() == 1
 
     events = OutboxEvent.objects.filter(type="finance.invoice.created")
