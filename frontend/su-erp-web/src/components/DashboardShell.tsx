@@ -13,6 +13,7 @@ import {
   MessageSquareWarning,
   Bus,
   UtensilsCrossed,
+  User,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
@@ -40,13 +41,29 @@ const NAV: Record<string, NavItem[]> = {
     { label: "Canteen", href: "/canteen", icon: UtensilsCrossed },
     { label: "Pay & confirm", href: "/student/saga-demo", icon: CreditCard },
     { label: "Raise grievance", href: "/student/escalation-demo", icon: MessageSquareWarning },
+    { label: "Profile", href: "/student/profile", icon: User },
   ],
-  warden: [{ label: "Overview", href: "/warden", icon: LayoutDashboard }],
-  admin: [{ label: "Overview", href: "/admin", icon: LayoutDashboard }],
+  warden: [
+    { label: "Overview", href: "/warden", icon: LayoutDashboard },
+    { label: "Profile", href: "/warden/profile", icon: User },
+  ],
+  admin: [
+    { label: "Overview", href: "/admin", icon: LayoutDashboard },
+    { label: "Profile", href: "/admin/profile", icon: User },
+  ],
   superadmin: [{ label: "Institutions", href: "/superadmin", icon: Building2 }],
-  faculty: [{ label: "Overview", href: "/faculty", icon: GraduationCap }],
-  driver: [{ label: "My schedules", href: "/driver", icon: Bus }],
-  canteen_owner: [{ label: "Canteen", href: "/canteen-owner", icon: UtensilsCrossed }],
+  faculty: [
+    { label: "Overview", href: "/faculty", icon: GraduationCap },
+    { label: "Profile", href: "/faculty/profile", icon: User },
+  ],
+  driver: [
+    { label: "My schedules", href: "/driver", icon: Bus },
+    { label: "Profile", href: "/driver/profile", icon: User },
+  ],
+  canteen_owner: [
+    { label: "Canteen", href: "/canteen-owner", icon: UtensilsCrossed },
+    { label: "Profile", href: "/canteen-owner/profile", icon: User },
+  ],
 };
 
 interface Institution {
