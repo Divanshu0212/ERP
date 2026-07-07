@@ -178,16 +178,18 @@ SPECTACULAR_SETTINGS = {
 # accounts.views issues tokens manually (RefreshToken.for_user + explicit
 # claim assignment) rather than via SimpleJWT's default TokenObtainPairView,
 # so most of these only govern signing/lifetime and the /refresh endpoint.
-# USER_ID_CLAIM/USER_ID_FIELD make the "sub" claim carry the user's UUID PK —
+# USER_ID_CLAIM/USER_ID_FIELD make the "sub" claim carry the user's pk —
 # the exact claim key suerp_common.auth.JWTAuthentication reads on every
-# other service.
+# other service. User.user_code is now the literal primary key (replacing
+# the old UUID id — see accounts/models.py), so RefreshToken.for_user(user)
+# (called from accounts.views._issue_tokens) reads it via this field name.
 SIMPLE_JWT = {
     "ACCESS_TOKEN_LIFETIME": timedelta(minutes=15),
     "REFRESH_TOKEN_LIFETIME": timedelta(days=7),
     "ROTATE_REFRESH_TOKENS": True,
     "ALGORITHM": "HS256",
     "SIGNING_KEY": JWT_SIGNING_KEY,
-    "USER_ID_FIELD": "id",
+    "USER_ID_FIELD": "user_code",
     "USER_ID_CLAIM": "sub",
 }
 

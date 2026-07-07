@@ -26,9 +26,27 @@ def _make_institution(slug, name, is_active=True):
     return Institution.objects.create(slug=slug, name=name, is_active=is_active)
 
 
-def _make_user(institution, email, role, password="s3cur3-passw0rd", **extra):
+_user_code_counter = 0
+
+
+def _next_user_code():
+    global _user_code_counter
+    _user_code_counter += 1
+    return f"USR-{_user_code_counter:04d}"
+
+
+def _make_user(institution, email, role, password="s3cur3-passw0rd", user_code=None, **extra):
+    if role == User.Role.SUPERADMIN:
+        return User.objects.create_superuser(
+            tenant=institution, email=email, password=password, role=role, **extra
+        )
     return User.objects.create_user(
-        tenant=institution, email=email, password=password, role=role, **extra
+        tenant=institution,
+        email=email,
+        password=password,
+        role=role,
+        user_code=user_code or _next_user_code(),
+        **extra,
     )
 
 
@@ -153,6 +171,7 @@ def test_superadmin_creates_admin_in_target_institution_and_emits_one_event(clie
             "institution_slug": "gamma",
             "email": "admin@gamma.example.com",
             "password": "n3w-passw0rd",
+            "user_code": "ADM-GAMMA",
         },
         format="json",
         HTTP_AUTHORIZATION=f"Bearer {token}",
@@ -165,11 +184,13 @@ def test_superadmin_creates_admin_in_target_institution_and_emits_one_event(clie
     assert data["institution_slug"] == "gamma"
 
     user = User.objects.get(tenant=target, email="admin@gamma.example.com")
-    assert data["id"] == str(user.id)
+    assert data["user_code"] == user.user_code
     assert user.role == User.Role.ADMIN
     assert user.check_password("n3w-passw0rd") is True
 
-    events = OutboxEvent.objects.filter(type="user.registered", payload__user_id=str(user.id))
+    events = OutboxEvent.objects.filter(
+        type="user.registered", payload__user_code=user.user_code
+    )
     assert events.count() == 1
     assert str(events.first().tenant_id) == str(target.id)
     assert events.first().payload["role"] == User.Role.ADMIN

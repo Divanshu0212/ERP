@@ -13,6 +13,7 @@ from rest_framework import serializers
 class RegisterSerializer(serializers.Serializer):
     institution_slug = serializers.SlugField()
     email = serializers.EmailField()
+    user_code = serializers.RegexField(r"^[A-Za-z0-9_-]{1,30}$")
     password = serializers.CharField(
         write_only=True, min_length=8, style={"input_type": "password"}
     )
@@ -35,6 +36,12 @@ class RegisterSerializer(serializers.Serializer):
         email = User.objects.normalize_email(attrs["email"])
         if institution and User.objects.filter(tenant=institution, email=email).exists():
             raise serializers.ValidationError({"email": "A user with this email already exists."})
+        if institution and User.objects.filter(
+            tenant=institution, user_code=attrs["user_code"]
+        ).exists():
+            raise serializers.ValidationError(
+                {"user_code": "A user with this user_code already exists."}
+            )
         return attrs
 
     def create(self, validated_data):
@@ -44,6 +51,7 @@ class RegisterSerializer(serializers.Serializer):
             email=validated_data["email"],
             password=validated_data["password"],
             role=validated_data.get("role", User.Role.STUDENT),
+            user_code=validated_data["user_code"],
         )
 
 
@@ -56,15 +64,15 @@ class InstitutionSerializer(serializers.Serializer):
 
 
 class UserListSerializer(serializers.Serializer):
-    id = serializers.UUIDField()
+    user_code = serializers.CharField(allow_null=True)
     email = serializers.EmailField()
     role = serializers.CharField()
     is_active = serializers.BooleanField()
     date_joined = serializers.DateTimeField()
 
 
-class UserByEmailSerializer(serializers.Serializer):
-    id = serializers.UUIDField()
+class UserByCodeSerializer(serializers.Serializer):
+    user_code = serializers.CharField()
     email = serializers.EmailField()
     role = serializers.CharField()
 
@@ -74,6 +82,7 @@ class AdminCreateUserSerializer(serializers.Serializer):
     JWT claim (passed in as ``institution``), never from the request body."""
 
     email = serializers.EmailField()
+    user_code = serializers.RegexField(r"^[A-Za-z0-9_-]{1,30}$")
     role = serializers.ChoiceField(choices=User.Role.choices)
     password = serializers.CharField(
         write_only=True, min_length=8, style={"input_type": "password"}
@@ -84,6 +93,10 @@ class AdminCreateUserSerializer(serializers.Serializer):
         email = User.objects.normalize_email(attrs["email"])
         if User.objects.filter(tenant=institution, email=email).exists():
             raise serializers.ValidationError({"email": "A user with this email already exists."})
+        if User.objects.filter(tenant=institution, user_code=attrs["user_code"]).exists():
+            raise serializers.ValidationError(
+                {"user_code": "A user with this user_code already exists."}
+            )
         attrs["email"] = email
         return attrs
 
@@ -94,6 +107,7 @@ class AdminCreateUserSerializer(serializers.Serializer):
             email=validated_data["email"],
             password=validated_data["password"],
             role=validated_data["role"],
+            user_code=validated_data["user_code"],
         )
 
 
@@ -123,6 +137,7 @@ class SuperadminCreateAdminSerializer(serializers.Serializer):
 
     institution_slug = serializers.SlugField()
     email = serializers.EmailField()
+    user_code = serializers.RegexField(r"^[A-Za-z0-9_-]{1,30}$")
     password = serializers.CharField(
         write_only=True, min_length=8, style={"input_type": "password"}
     )
@@ -142,6 +157,12 @@ class SuperadminCreateAdminSerializer(serializers.Serializer):
         email = User.objects.normalize_email(attrs["email"])
         if institution and User.objects.filter(tenant=institution, email=email).exists():
             raise serializers.ValidationError({"email": "A user with this email already exists."})
+        if institution and User.objects.filter(
+            tenant=institution, user_code=attrs["user_code"]
+        ).exists():
+            raise serializers.ValidationError(
+                {"user_code": "A user with this user_code already exists."}
+            )
         attrs["email"] = email
         return attrs
 
@@ -151,6 +172,7 @@ class SuperadminCreateAdminSerializer(serializers.Serializer):
             email=validated_data["email"],
             password=validated_data["password"],
             role=User.Role.ADMIN,
+            user_code=validated_data["user_code"],
         )
 
 
@@ -165,7 +187,23 @@ class RefreshSerializer(serializers.Serializer):
 
 
 class MeSerializer(serializers.Serializer):
-    id = serializers.UUIDField()
+    user_code = serializers.CharField(allow_null=True)
     email = serializers.EmailField()
     role = serializers.CharField()
     tenant = serializers.CharField()
+
+
+class UserProfileSerializer(serializers.Serializer):
+    phone = serializers.CharField(max_length=20, required=False, allow_blank=True)
+    address = serializers.CharField(required=False, allow_blank=True)
+    date_of_birth = serializers.DateField(required=False, allow_null=True)
+    gender = serializers.CharField(max_length=20, required=False, allow_blank=True)
+    emergency_contact_name = serializers.CharField(
+        max_length=255, required=False, allow_blank=True
+    )
+    emergency_contact_phone = serializers.CharField(
+        max_length=20, required=False, allow_blank=True
+    )
+    blood_group = serializers.CharField(max_length=5, required=False, allow_blank=True)
+    profile_photo_url = serializers.URLField(required=False, allow_blank=True)
+    updated_at = serializers.DateTimeField(read_only=True)
