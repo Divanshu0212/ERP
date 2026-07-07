@@ -22,7 +22,7 @@ ORDERS_ENDPOINT = "/api/v1/orders/"
 
 def _token(tenant_id, user_id=None, role="student"):
     return jwt.encode(
-        {"sub": str(user_id or uuid.uuid4()), "role": role, "tenant": str(tenant_id)},
+        {"sub": user_id or f"STU{uuid.uuid4().hex[:27]}", "role": role, "tenant": str(tenant_id)},
         settings.JWT_SIGNING_KEY,
         algorithm="HS256",
     )
@@ -42,10 +42,10 @@ def _menu_item(tenant_id, price="50.00", available=True, name="Meal"):
 
 def test_student_places_order_snapshots_price_and_computes_total():
     tenant_id = uuid.uuid4()
-    student_id = uuid.uuid4()
+    student_user_code = f"STU{uuid.uuid4().hex[:27]}"
     item = _menu_item(tenant_id, price="40.00")
 
-    resp = _client(tenant_id, user_id=student_id, role="student").post(
+    resp = _client(tenant_id, user_id=student_user_code, role="student").post(
         ORDERS_ENDPOINT,
         {"items": [{"menu_item_id": str(item.id), "quantity": 3}]},
         format="json",
@@ -56,7 +56,7 @@ def test_student_places_order_snapshots_price_and_computes_total():
     assert body["success"] is True
     assert body["data"]["status"] == "placed"
     assert body["data"]["total"] == "120.00"
-    assert str(body["data"]["student_id"]) == str(student_id)
+    assert body["data"]["student_user_code"] == student_user_code
     assert len(body["data"]["items"]) == 1
     assert body["data"]["items"][0]["unit_price"] == "40.00"
 
@@ -93,15 +93,15 @@ def test_non_student_cannot_place_order():
 
 def test_order_list_is_role_scoped():
     tenant_id = uuid.uuid4()
-    student_a = uuid.uuid4()
-    student_b = uuid.uuid4()
-    Order.all_objects.create(tenant_id=tenant_id, student_id=student_a, total="10.00")
-    Order.all_objects.create(tenant_id=tenant_id, student_id=student_b, total="20.00")
+    student_a = f"STU{uuid.uuid4().hex[:27]}"
+    student_b = f"STU{uuid.uuid4().hex[:27]}"
+    Order.all_objects.create(tenant_id=tenant_id, student_user_code=student_a, total="10.00")
+    Order.all_objects.create(tenant_id=tenant_id, student_user_code=student_b, total="20.00")
 
     # Student A sees only their own order.
     body = _client(tenant_id, user_id=student_a, role="student").get(ORDERS_ENDPOINT).json()
     assert body["data"]["count"] == 1
-    assert str(body["data"]["results"][0]["student_id"]) == str(student_a)
+    assert body["data"]["results"][0]["student_user_code"] == student_a
 
     # Canteen owner sees the whole tenant queue.
     body = _client(tenant_id, role="canteen_owner").get(ORDERS_ENDPOINT).json()
@@ -111,7 +111,7 @@ def test_order_list_is_role_scoped():
 def test_status_transition_valid_and_invalid():
     tenant_id = uuid.uuid4()
     order = Order.all_objects.create(
-        tenant_id=tenant_id, student_id=uuid.uuid4(), total="10.00", status="placed"
+        tenant_id=tenant_id, student_user_code=f"STU{uuid.uuid4().hex[:27]}", total="10.00", status="placed"
     )
     owner = _client(tenant_id, role="canteen_owner")
     url = f"{ORDERS_ENDPOINT}{order.id}/status/"
@@ -129,7 +129,7 @@ def test_status_transition_valid_and_invalid():
 def test_student_cannot_change_status():
     tenant_id = uuid.uuid4()
     order = Order.all_objects.create(
-        tenant_id=tenant_id, student_id=uuid.uuid4(), total="10.00", status="placed"
+        tenant_id=tenant_id, student_user_code=f"STU{uuid.uuid4().hex[:27]}", total="10.00", status="placed"
     )
     resp = _client(tenant_id, role="student").patch(
         f"{ORDERS_ENDPOINT}{order.id}/status/", {"status": "preparing"}, format="json"

@@ -15,7 +15,7 @@ ENDPOINT = "/api/v1/menu-items/"
 
 def _token(tenant_id):
     return jwt.encode(
-        {"sub": str(uuid.uuid4()), "role": "admin", "tenant": str(tenant_id)},
+        {"sub": f"ADM{uuid.uuid4().hex[:27]}", "role": "admin", "tenant": str(tenant_id)},
         settings.JWT_SIGNING_KEY,
         algorithm="HS256",
     )

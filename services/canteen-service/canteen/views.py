@@ -184,7 +184,7 @@ class OrderListCreateView(ListCreateAPIView):
         )
         role = getattr(self.request.user, "role", None)
         if role == "student":
-            qs = qs.filter(student_id=self.request.user.id)
+            qs = qs.filter(student_user_code=self.request.user.id)
         # canteen_owner/admin: full tenant queue in window (no student filter).
         return qs.order_by("-created_at")
 
@@ -217,7 +217,7 @@ class OrderListCreateView(ListCreateAPIView):
 
             order = Order.objects.create(
                 tenant_id=request.tenant_id,
-                student_id=request.user.id,
+                student_user_code=request.user.id,
                 status=Order.Status.PLACED,
                 total=total,
                 gateway_ref=gateway_ref,

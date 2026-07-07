@@ -25,7 +25,7 @@ ORDERS_ENDPOINT = "/api/v1/orders/"
 
 def _token(tenant_id, user_id=None, role="student"):
     return jwt.encode(
-        {"sub": str(user_id or uuid.uuid4()), "role": role, "tenant": str(tenant_id)},
+        {"sub": user_id or f"STU{uuid.uuid4().hex[:27]}", "role": role, "tenant": str(tenant_id)},
         settings.JWT_SIGNING_KEY,
         algorithm="HS256",
     )

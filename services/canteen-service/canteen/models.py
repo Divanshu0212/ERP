@@ -3,10 +3,10 @@
 All three are ``suerp_common.tenancy.TenantModel`` subclasses, so ``objects``
 is transparently tenant-scoped and ``all_objects`` bypasses scoping.
 
-``Order.student_id`` is a bare UUID, not a ForeignKey: auth-service/
+``Order.student_user_code`` is a bare user_code string, not a ForeignKey: auth-service/
 student-service owns that row in its own database (DB-per-service), so
 canteen-service can only ever hold an opaque reference to it. Same pattern as
-transport-service's ``Booking.student_id``.
+transport-service's ``Booking.student_user_code``.
 
 ``OrderItem.unit_price`` is a SNAPSHOT of ``MenuItem.price`` at order-creation
 time, deliberately copied rather than live-joined: a later price edit must not
@@ -40,8 +40,8 @@ class Order(TenantModel):
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     # Reference to auth-service's User table (the student). No cross-service FK
-    # (DB-per-service) — this is a bare, opaque UUID.
-    student_id = models.UUIDField()
+    # (DB-per-service) — this is a bare, opaque user_code string.
+    student_user_code = models.CharField(max_length=30)
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.PLACED)
     total = models.DecimalField(max_digits=8, decimal_places=2)
     # Razorpay payment id when the order was paid through the real gateway;
@@ -53,7 +53,7 @@ class Order(TenantModel):
     class Meta:
         indexes = [
             models.Index(fields=["tenant_id", "created_at"], name="order_tenant_created"),
-            models.Index(fields=["tenant_id", "student_id"], name="order_tenant_student"),
+            models.Index(fields=["tenant_id", "student_user_code"], name="order_tenant_student"),
         ]
 
     def __str__(self):
