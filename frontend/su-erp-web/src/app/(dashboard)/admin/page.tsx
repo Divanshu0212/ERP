@@ -23,6 +23,7 @@ import { Table, TBody, TD, TH, THead, HeaderRow, Row } from "@/components/ui/Tab
 interface User {
   id: string;
   email: string;
+  user_code: string | null;
   role: string;
   is_active: boolean;
   date_joined: string;
@@ -180,7 +181,7 @@ function AdminContent() {
         ))}
       </div>
 
-      <CreateInvoice users={users} onCreated={loadCrossStats} />
+      <CreateInvoice onCreated={loadCrossStats} />
 
       <FeeStructures />
 
@@ -268,8 +269,8 @@ function AdminContent() {
   );
 }
 
-function CreateInvoice({ users, onCreated }: { users: User[]; onCreated: () => void }) {
-  const [studentEmail, setStudentEmail] = useState("");
+function CreateInvoice({ onCreated }: { onCreated: () => void }) {
+  const [studentUserCode, setStudentUserCode] = useState("");
   const [amount, setAmount] = useState("");
   const [purpose, setPurpose] = useState("");
   const [pending, setPending] = useState(false);
@@ -282,19 +283,13 @@ function CreateInvoice({ users, onCreated }: { users: User[]; onCreated: () => v
     setError(null);
     setOk(null);
     try {
-      const student = users.find(
-        (u) => u.email.toLowerCase() === studentEmail.trim().toLowerCase(),
-      );
-      if (!student) {
-        throw new Error(`No user found with email ${studentEmail}.`);
-      }
       await api.post("/api/v1/finance/invoices", {
-        student_id: student.id,
+        student_user_code: studentUserCode,
         amount,
         purpose,
       });
       setOk("Invoice created.");
-      setStudentEmail("");
+      setStudentUserCode("");
       setAmount("");
       setPurpose("");
       onCreated();
@@ -311,12 +306,11 @@ function CreateInvoice({ users, onCreated }: { users: User[]; onCreated: () => v
       <CardBody>
         <form onSubmit={submit} className="space-y-4">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-            <Field label="Student email" htmlFor="inv-student">
+            <Field label="Student user code" htmlFor="inv-student">
               <Input
                 id="inv-student"
-                type="email"
-                value={studentEmail}
-                onChange={(e) => setStudentEmail(e.target.value)}
+                value={studentUserCode}
+                onChange={(e) => setStudentUserCode(e.target.value)}
                 required
               />
             </Field>
@@ -587,7 +581,7 @@ function HostelSetup() {
 function CreateBlock({ onCreated }: { onCreated: () => void }) {
   const [name, setName] = useState("");
   const [genderType, setGenderType] = useState<"M" | "F">("M");
-  const [wardenEmail, setWardenEmail] = useState("");
+  const [wardenUserCode, setWardenUserCode] = useState("");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [ok, setOk] = useState<string | null>(null);
@@ -601,11 +595,11 @@ function CreateBlock({ onCreated }: { onCreated: () => void }) {
       await api.post("/api/v1/hostel/blocks", {
         name,
         gender_type: genderType,
-        warden_email: wardenEmail,
+        warden_user_code: wardenUserCode,
       });
       setOk("Block created.");
       setName("");
-      setWardenEmail("");
+      setWardenUserCode("");
       onCreated();
     } catch (err) {
       setError(fieldErrorMessage(err) ?? errMsg(err));
@@ -633,12 +627,11 @@ function CreateBlock({ onCreated }: { onCreated: () => void }) {
                 <option value="F">Female</option>
               </Select>
             </Field>
-            <Field label="Warden email" htmlFor="block-warden">
+            <Field label="Warden user code" htmlFor="block-warden">
               <Input
                 id="block-warden"
-                type="email"
-                value={wardenEmail}
-                onChange={(e) => setWardenEmail(e.target.value)}
+                value={wardenUserCode}
+                onChange={(e) => setWardenUserCode(e.target.value)}
                 required
               />
             </Field>

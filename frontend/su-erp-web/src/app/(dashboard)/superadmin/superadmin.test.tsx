@@ -130,6 +130,9 @@ describe("SuperadminPage", () => {
     fireEvent.change(screen.getByLabelText("Admin email"), {
       target: { value: "admin@riverside.edu" },
     });
+    fireEvent.change(screen.getByLabelText("User code"), {
+      target: { value: "ADM001" },
+    });
     fireEvent.change(screen.getByLabelText("Temporary password"), {
       target: { value: "s3cretpass" },
     });
@@ -139,6 +142,7 @@ describe("SuperadminPage", () => {
       expect(post).toHaveBeenCalledWith("/api/v1/auth/admins", {
         institution_slug: "riverside-tech",
         email: "admin@riverside.edu",
+        user_code: "ADM001",
         password: "s3cretpass",
       }),
     );
