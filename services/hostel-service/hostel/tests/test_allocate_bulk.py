@@ -20,7 +20,7 @@ from hostel.tests.test_allocate import _auth_client, _make_room  # noqa: E402
 
 
 def _csv_file(rows, filename="import.csv"):
-    lines = ["room_id,student_email"] + [f"{r},{e}" for r, e in rows]
+    lines = ["room_id,student_user_code"] + [f"{r},{e}" for r, e in rows]
     content = "\n".join(lines).encode("utf-8")
     return io.BytesIO(content), filename
 
@@ -28,7 +28,7 @@ def _csv_file(rows, filename="import.csv"):
 def _xlsx_file(rows, filename="import.xlsx"):
     workbook = openpyxl.Workbook()
     sheet = workbook.active
-    sheet.append(["room_id", "student_email"])
+    sheet.append(["room_id", "student_user_code"])
     for r, e in rows:
         sheet.append([r, e])
     buf = io.BytesIO()
@@ -44,19 +44,19 @@ def _upload(client, buf, filename):
     return client.post("/api/v1/hostel/allocate/bulk", {"file": upload}, format="multipart")
 
 
-@patch("hostel.views.resolve_user_by_email")
+@patch("hostel.views.resolve_user_by_code")
 def test_all_rows_succeed_csv(mock_resolve):
     tenant_id = uuid.uuid4()
     room1 = _make_room(tenant_id, capacity=2, occupied_count=0, room_no="101")
     room2 = _make_room(tenant_id, capacity=2, occupied_count=0, room_no="102")
-    mock_resolve.side_effect = lambda email, auth: {
-        "id": str(uuid.uuid4()),
-        "email": email,
+    mock_resolve.side_effect = lambda user_code, auth: {
+        "user_code": user_code,
+        "email": f"{user_code.lower()}@example.com",
         "role": "student",
     }
     client = _auth_client(tenant_id, role="warden")
 
-    buf, name = _csv_file([(str(room1.id), "a@example.com"), (str(room2.id), "b@example.com")])
+    buf, name = _csv_file([(str(room1.id), "STU-1"), (str(room2.id), "STU-2")])
     response = _upload(client, buf, name)
 
     assert response.status_code == 201, response.content
@@ -71,18 +71,18 @@ def test_all_rows_succeed_csv(mock_resolve):
     assert Allocation.all_objects.filter(tenant_id=tenant_id).count() == 2
 
 
-@patch("hostel.views.resolve_user_by_email")
+@patch("hostel.views.resolve_user_by_code")
 def test_all_rows_succeed_xlsx(mock_resolve):
     tenant_id = uuid.uuid4()
     room = _make_room(tenant_id, capacity=2, occupied_count=0)
     mock_resolve.return_value = {
-        "id": str(uuid.uuid4()),
+        "user_code": "STU-1",
         "email": "a@example.com",
         "role": "student",
     }
     client = _auth_client(tenant_id, role="warden")
 
-    buf, name = _xlsx_file([(str(room.id), "a@example.com")])
+    buf, name = _xlsx_file([(str(room.id), "STU-1")])
     response = _upload(client, buf, name)
 
     assert response.status_code == 201, response.content
@@ -91,7 +91,7 @@ def test_all_rows_succeed_xlsx(mock_resolve):
     assert body["fail_count"] == 0
 
 
-@patch("hostel.views.resolve_user_by_email")
+@patch("hostel.views.resolve_user_by_code")
 def test_mixed_success_and_failure(mock_resolve):
     from hostel.lookups import LookupFailed
 
@@ -99,20 +99,20 @@ def test_mixed_success_and_failure(mock_resolve):
     good_room = _make_room(tenant_id, capacity=2, occupied_count=0, room_no="101")
     full_room = _make_room(tenant_id, capacity=1, occupied_count=1, room_no="102")
 
-    def resolve_side_effect(email, auth):
-        if email == "unknown@example.com":
+    def resolve_side_effect(user_code, auth):
+        if user_code == "STU-UNKNOWN":
             raise LookupFailed("not_found", "No user found.")
-        return {"id": str(uuid.uuid4()), "email": email, "role": "student"}
+        return {"user_code": user_code, "email": f"{user_code.lower()}@example.com", "role": "student"}
 
     mock_resolve.side_effect = resolve_side_effect
     client = _auth_client(tenant_id, role="warden")
 
     buf, name = _csv_file(
         [
-            (str(good_room.id), "good@example.com"),
-            (str(full_room.id), "student2@example.com"),
-            ("not-a-uuid", "student3@example.com"),
-            (str(good_room.id), "unknown@example.com"),
+            (str(good_room.id), "STU-GOOD"),
+            (str(full_room.id), "STU-2"),
+            ("not-a-uuid", "STU-3"),
+            (str(good_room.id), "STU-UNKNOWN"),
         ]
     )
     response = _upload(client, buf, name)
@@ -131,12 +131,12 @@ def test_mixed_success_and_failure(mock_resolve):
     assert rows[3].status == "failed" and "no user found" in rows[3].error_message.lower()
 
 
-@patch("hostel.views.resolve_user_by_email")
-def test_blank_email_row_is_skipped_not_failed(mock_resolve):
+@patch("hostel.views.resolve_user_by_code")
+def test_blank_code_row_is_skipped_not_failed(mock_resolve):
     tenant_id = uuid.uuid4()
     room = _make_room(tenant_id, capacity=2, occupied_count=0, room_no="101")
     mock_resolve.return_value = {
-        "id": str(uuid.uuid4()),
+        "user_code": "STU-1",
         "email": "a@example.com",
         "role": "student",
     }
@@ -155,14 +155,14 @@ def test_blank_email_row_is_skipped_not_failed(mock_resolve):
     batch = AllocationImportBatch.all_objects.get(id=body["batch_id"])
     row = batch.rows.get(row_number=1)
     assert row.status == "skipped"
-    assert "no email" in row.error_message.lower()
+    assert "no user_code" in row.error_message.lower()
 
 
 def test_rejects_wrong_extension():
     tenant_id = uuid.uuid4()
     client = _auth_client(tenant_id, role="warden")
 
-    buf, name = _csv_file([(str(uuid.uuid4()), "a@example.com")], filename="import.txt")
+    buf, name = _csv_file([(str(uuid.uuid4()), "STU-1")], filename="import.txt")
     response = _upload(client, buf, name)
 
     assert response.status_code == 415
@@ -187,7 +187,7 @@ def test_student_role_cannot_bulk_allocate():
     tenant_id = uuid.uuid4()
     client = _auth_client(tenant_id, role="student")
 
-    buf, name = _csv_file([(str(uuid.uuid4()), "a@example.com")])
+    buf, name = _csv_file([(str(uuid.uuid4()), "STU-1")])
     response = _upload(client, buf, name)
 
     assert response.status_code == 403

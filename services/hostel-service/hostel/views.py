@@ -26,7 +26,7 @@ from django.db.models import F
 from django.http import Http404
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
-from hostel.lookups import LookupFailed, resolve_institution_name, resolve_user_by_email
+from hostel.lookups import LookupFailed, resolve_institution_name, resolve_user_by_code
 from hostel.models import (
     Allocation,
     AllocationImportBatch,
@@ -75,7 +75,7 @@ class AvailableRoomsView(ListAPIView):
 class AvailableRoomsTemplateView(APIView):
     """GET /api/v1/hostel/rooms/available-template — CSV download of available
     rooms, pre-filled with room_id/room_name so a warden only has to type in
-    student_email before re-uploading to /api/v1/hostel/allocate/bulk.
+    student_user_code before re-uploading to /api/v1/hostel/allocate/bulk.
 
     Returns a raw text/csv HttpResponse, not the JSON envelope — this is a file
     download, not a data API call, same as the frontend's earlier static-asset
@@ -95,7 +95,7 @@ class AvailableRoomsTemplateView(APIView):
 
         buffer = io.StringIO()
         writer = csv.writer(buffer)
-        writer.writerow(["room_id", "room_name", "student_email"])
+        writer.writerow(["room_id", "room_name", "student_user_code"])
         for room in rooms:
             writer.writerow([str(room.id), f"{room.block.name} - {room.room_no}", ""])
 
@@ -124,8 +124,8 @@ class BlockListCreateView(ListCreateAPIView):
             return fail("Invalid block payload.", errors=serializer.errors, status=400)
 
         try:
-            warden = resolve_user_by_email(
-                serializer.validated_data["warden_email"], request.META.get("HTTP_AUTHORIZATION")
+            warden = resolve_user_by_code(
+                serializer.validated_data["warden_user_code"], request.META.get("HTTP_AUTHORIZATION")
             )
         except LookupFailed as exc:
             return fail(str(exc), status=400 if exc.reason == "not_found" else 502)
@@ -134,7 +134,7 @@ class BlockListCreateView(ListCreateAPIView):
             tenant_id=get_current_tenant(),
             name=serializer.validated_data["name"],
             gender_type=serializer.validated_data["gender_type"],
-            warden_id=warden["id"],
+            warden_id=warden["user_code"],
         )
         return ok(BlockSerializer(block).data, message="Block created.", status=201)
 
@@ -210,7 +210,7 @@ class RoomRequestListCreateView(APIView):
             with transaction.atomic():
                 room_request = RoomRequest.objects.create(
                     tenant_id=get_current_tenant(),
-                    student_id=request.user.id,
+                    student_user_code=request.user.id,
                     room=room,
                     status=RoomRequest.Status.PENDING,
                 )
@@ -273,7 +273,7 @@ class ApproveRoomRequestView(APIView):
 
                 create_allocation(
                     room_request.room_id,
-                    room_request.student_id,
+                    room_request.student_user_code,
                     get_current_tenant(),
                     fee_structure_id=serializer.validated_data["fee_structure_id"],
                     university_name=university_name,
@@ -318,7 +318,7 @@ class MyRoomRequestsView(ListAPIView):
     permission_classes = [role_required("student")]
 
     def get_queryset(self):
-        return RoomRequest.objects.filter(student_id=self.request.user.id).order_by(
+        return RoomRequest.objects.filter(student_user_code=self.request.user.id).order_by(
             "-requested_on"
         )
 
@@ -366,15 +366,17 @@ class AllocateView(APIView):
             return fail("Invalid allocation request.", errors=serializer.errors, status=400)
 
         room_id = serializer.validated_data["room_id"]
-        student_email = serializer.validated_data["student_email"]
+        student_user_code = serializer.validated_data["student_user_code"]
 
         try:
-            student = resolve_user_by_email(student_email, request.META.get("HTTP_AUTHORIZATION"))
+            student = resolve_user_by_code(
+                student_user_code, request.META.get("HTTP_AUTHORIZATION")
+            )
         except LookupFailed as exc:
             return fail(str(exc), status=400 if exc.reason == "not_found" else 502)
 
         try:
-            allocation = create_allocation(room_id, student["id"], get_current_tenant())
+            allocation = create_allocation(room_id, student["user_code"], get_current_tenant())
         except RoomFullError:
             return fail("Room at full capacity.", status=400)
 
@@ -389,25 +391,24 @@ ALLOWED_EXTENSIONS = {"csv", "xlsx"}
 
 
 def _parse_rows(upload, extension) -> list[tuple[str, str]]:
-    """Parse an uploaded CSV/XLSX into a list of (room_id, student_email) tuples.
+    """Parse an uploaded CSV/XLSX into a list of (room_id, student_user_code) tuples.
 
-    Expects a header row with columns ``room_id`` and ``student_email`` (any
-    order, case-insensitive). Raises ValueError with a caller-facing message
-    on missing/misnamed columns or an empty sheet.
+    Expects a header row with columns ``room_id`` and ``student_user_code``
+    (any order, case-insensitive).
     """
     if extension == "csv":
         text = upload.read().decode("utf-8-sig")
         reader = csv.DictReader(io.StringIO(text))
         fieldnames = [f.strip().lower() for f in (reader.fieldnames or [])]
-        if "room_id" not in fieldnames or "student_email" not in fieldnames:
-            raise ValueError("CSV must have room_id and student_email columns.")
+        if "room_id" not in fieldnames or "student_user_code" not in fieldnames:
+            raise ValueError("CSV must have room_id and student_user_code columns.")
         rows = []
         for record in reader:
             normalized = {k.strip().lower(): v for k, v in record.items() if k}
             rows.append(
                 (
                     (normalized.get("room_id") or "").strip(),
-                    (normalized.get("student_email") or "").strip(),
+                    (normalized.get("student_user_code") or "").strip(),
                 )
             )
         return rows
@@ -418,20 +419,20 @@ def _parse_rows(upload, extension) -> list[tuple[str, str]]:
     if not sheet_rows:
         raise ValueError("XLSX file is empty.")
     header = [str(c).strip().lower() if c is not None else "" for c in sheet_rows[0]]
-    if "room_id" not in header or "student_email" not in header:
-        raise ValueError("XLSX must have room_id and student_email columns.")
+    if "room_id" not in header or "student_user_code" not in header:
+        raise ValueError("XLSX must have room_id and student_user_code columns.")
     room_idx = header.index("room_id")
-    email_idx = header.index("student_email")
+    code_idx = header.index("student_user_code")
     rows = []
     for record in sheet_rows[1:]:
         if record is None or all(c is None for c in record):
             continue
         room_val = record[room_idx] if room_idx < len(record) else None
-        email_val = record[email_idx] if email_idx < len(record) else None
+        code_val = record[code_idx] if code_idx < len(record) else None
         rows.append(
             (
                 str(room_val).strip() if room_val is not None else "",
-                str(email_val).strip() if email_val is not None else "",
+                str(code_val).strip() if code_val is not None else "",
             )
         )
     return rows
@@ -475,30 +476,30 @@ class AllocateBulkView(APIView):
             total_rows=len(rows),
         )
 
-        email_cache: dict[str, dict] = {}
+        code_cache: dict[str, dict] = {}
         success_count = 0
         fail_count = 0
         skipped_count = 0
 
-        for row_number, (room_id_raw, student_email_raw) in enumerate(rows, start=1):
+        for row_number, (room_id_raw, student_user_code_raw) in enumerate(rows, start=1):
             error_message = ""
             allocation = None
             row_status = AllocationImportRow.Status.FAILED
 
-            if not room_id_raw or not student_email_raw:
-                error_message = "Row skipped: no email provided."
+            if not room_id_raw or not student_user_code_raw:
+                error_message = "Row skipped: no user_code provided."
                 row_status = AllocationImportRow.Status.SKIPPED
                 skipped_count += 1
             else:
                 try:
-                    if student_email_raw not in email_cache:
-                        email_cache[student_email_raw] = resolve_user_by_email(
-                            student_email_raw, auth_header
+                    if student_user_code_raw not in code_cache:
+                        code_cache[student_user_code_raw] = resolve_user_by_code(
+                            student_user_code_raw, auth_header
                         )
-                    student = email_cache[student_email_raw]
+                    student = code_cache[student_user_code_raw]
 
                     room_uuid = uuid_lib.UUID(room_id_raw)
-                    allocation = create_allocation(room_uuid, student["id"], tenant_id)
+                    allocation = create_allocation(room_uuid, student["user_code"], tenant_id)
                     row_status = AllocationImportRow.Status.SUCCESS
                     success_count += 1
                 except LookupFailed as exc:
@@ -519,7 +520,7 @@ class AllocateBulkView(APIView):
                 batch=batch,
                 row_number=row_number,
                 room_id_raw=room_id_raw,
-                student_email_raw=student_email_raw,
+                student_user_code_raw=student_user_code_raw,
                 status=row_status,
                 error_message=error_message,
                 allocation=allocation,

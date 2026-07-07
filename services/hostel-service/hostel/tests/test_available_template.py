@@ -1,5 +1,5 @@
 """GET /api/v1/hostel/rooms/available-template — CSV download of available rooms,
-pre-filled with room_id and room_name so a warden can fill in student_email and
+pre-filled with room_id and room_name so a warden can fill in student_user_code and
 re-upload it directly to /api/v1/hostel/allocate/bulk.
 """
 
@@ -29,12 +29,12 @@ def test_returns_only_available_rooms_as_csv():
 
     content = response.content.decode("utf-8")
     reader = csv.DictReader(io.StringIO(content))
-    assert reader.fieldnames == ["room_id", "room_name", "student_email"]
+    assert reader.fieldnames == ["room_id", "room_name", "student_user_code"]
     rows = list(reader)
     assert len(rows) == 1
     assert rows[0]["room_id"] == str(available.id)
     assert rows[0]["room_name"] == f"{available.block.name} - {available.room_no}"
-    assert rows[0]["student_email"] == ""
+    assert rows[0]["student_user_code"] == ""
     assert str(full.id) not in content
 
 

@@ -17,7 +17,7 @@ from hostel.tests.test_allocate import _auth_client, _make_room  # noqa: E402
 def test_student_can_create_room_request():
     tenant_id = uuid.uuid4()
     room = _make_room(tenant_id, capacity=2, occupied_count=0, room_no="101")
-    student_id = uuid.uuid4()
+    student_id = f"STU-{uuid.uuid4().hex[:8]}"
     client = _auth_client(tenant_id, role="student", user_id=student_id)
 
     response = client.post(
@@ -32,7 +32,7 @@ def test_student_can_create_room_request():
     assert body["room_id"] == str(room.id)
 
     req = RoomRequest.all_objects.get(id=body["id"])
-    assert req.student_id == student_id
+    assert req.student_user_code == student_id
     assert req.tenant_id == tenant_id
 
 
@@ -55,7 +55,7 @@ def test_duplicate_pending_request_returns_400():
     UniqueConstraint scoped to status="pending")."""
     tenant_id = uuid.uuid4()
     room = _make_room(tenant_id, capacity=2, occupied_count=0, room_no="101")
-    student_id = uuid.uuid4()
+    student_id = f"STU-{uuid.uuid4().hex[:8]}"
     client = _auth_client(tenant_id, role="student", user_id=student_id)
 
     first = client.post(
@@ -67,14 +67,14 @@ def test_duplicate_pending_request_returns_400():
         "/api/v1/hostel/room-requests", {"room_id": str(room.id)}, format="json"
     )
     assert second.status_code == 400, second.content
-    assert RoomRequest.all_objects.filter(student_id=student_id, room=room).count() == 1
+    assert RoomRequest.all_objects.filter(student_user_code=student_id, room=room).count() == 1
 
 
 def test_student_lists_only_own_requests():
     tenant_id = uuid.uuid4()
     room = _make_room(tenant_id, capacity=3, occupied_count=0, room_no="101")
-    student_a = uuid.uuid4()
-    student_b = uuid.uuid4()
+    student_a = f"STU-{uuid.uuid4().hex[:8]}"
+    student_b = f"STU-{uuid.uuid4().hex[:8]}"
 
     client_a = _auth_client(tenant_id, role="student", user_id=student_a)
     client_a.post("/api/v1/hostel/room-requests", {"room_id": str(room.id)}, format="json")

@@ -21,7 +21,7 @@ from suerp_common.outbox import OutboxEvent  # noqa: E402
 def test_warden_approves_request_creates_allocation_with_fee_and_university(mock_get):
     tenant_id = uuid.uuid4()
     room = _make_room(tenant_id, capacity=2, occupied_count=0, room_no="101")
-    student_id = uuid.uuid4()
+    student_id = f"STU-{uuid.uuid4().hex[:8]}"
 
     student_client = _auth_client(tenant_id, role="student", user_id=student_id)
     create_response = student_client.post(
@@ -52,7 +52,7 @@ def test_warden_approves_request_creates_allocation_with_fee_and_university(mock
     assert req.status == "approved"
     assert req.decided_on is not None
 
-    allocation = Allocation.all_objects.get(student_id=student_id, tenant_id=tenant_id)
+    allocation = Allocation.all_objects.get(student_user_code=student_id, tenant_id=tenant_id)
     assert allocation.status == "pending"
 
     event = OutboxEvent.objects.get(tenant_id=tenant_id, type="hostel.allocation.requested")
@@ -66,7 +66,7 @@ def test_double_approve_does_not_create_second_allocation(mock_get):
     clean 400 "already decided" and does NOT create a second Allocation."""
     tenant_id = uuid.uuid4()
     room = _make_room(tenant_id, capacity=2, occupied_count=0, room_no="101")
-    student_id = uuid.uuid4()
+    student_id = f"STU-{uuid.uuid4().hex[:8]}"
 
     student_client = _auth_client(tenant_id, role="student", user_id=student_id)
     create_response = student_client.post(
@@ -99,7 +99,7 @@ def test_double_approve_does_not_create_second_allocation(mock_get):
     assert second.status_code == 400, second.content
 
     assert (
-        Allocation.all_objects.filter(student_id=student_id, tenant_id=tenant_id).count() == 1
+        Allocation.all_objects.filter(student_user_code=student_id, tenant_id=tenant_id).count() == 1
     )
 
 

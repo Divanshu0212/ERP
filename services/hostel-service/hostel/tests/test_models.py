@@ -20,7 +20,7 @@ def _make_block(tenant_id, gender_type="M"):
         tenant_id=tenant_id,
         name="Block A",
         gender_type=gender_type,
-        warden_id=uuid.uuid4(),
+        warden_id="WARD-1",
     )
 
 
@@ -60,12 +60,12 @@ def test_allocation_tenant_scoping_isolates_by_tenant():
     allocation_a = Allocation.all_objects.create(
         tenant_id=tenant_a,
         room=room_a,
-        student_id=uuid.uuid4(),
+        student_user_code="STU-A",
     )
     allocation_b = Allocation.all_objects.create(
         tenant_id=tenant_b,
         room=room_b,
-        student_id=uuid.uuid4(),
+        student_user_code="STU-B",
     )
 
     try:
@@ -85,7 +85,7 @@ def test_allocation_default_status_is_pending():
     allocation = Allocation.all_objects.create(
         tenant_id=tenant_id,
         room=room,
-        student_id=uuid.uuid4(),
+        student_user_code="STU-1",
     )
     assert allocation.status == "pending"
 
@@ -100,16 +100,16 @@ def test_room_attaches_to_block():
 def test_import_batch_and_row_creation():
     tenant_id = uuid.uuid4()
     block = Block.all_objects.create(
-        tenant_id=tenant_id, name="Block A", gender_type="M", warden_id=uuid.uuid4()
+        tenant_id=tenant_id, name="Block A", gender_type="M", warden_id="WARD-1"
     )
     room = Room.all_objects.create(tenant_id=tenant_id, block=block, room_no="101", capacity=2)
     allocation = Allocation.all_objects.create(
-        tenant_id=tenant_id, room=room, student_id=uuid.uuid4(), status=Allocation.Status.PENDING
+        tenant_id=tenant_id, room=room, student_user_code="STU-1", status=Allocation.Status.PENDING
     )
 
     batch = AllocationImportBatch.all_objects.create(
         tenant_id=tenant_id,
-        uploaded_by=uuid.uuid4(),
+        uploaded_by="WARD-1",
         filename="import.csv",
         total_rows=2,
         success_count=1,
@@ -120,7 +120,7 @@ def test_import_batch_and_row_creation():
         batch=batch,
         row_number=1,
         room_id_raw=str(room.id),
-        student_email_raw="a@example.com",
+        student_user_code_raw="STU-1",
         status=AllocationImportRow.Status.SUCCESS,
         allocation=allocation,
     )
@@ -129,7 +129,7 @@ def test_import_batch_and_row_creation():
         batch=batch,
         row_number=2,
         room_id_raw="not-a-uuid",
-        student_email_raw="bad@example.com",
+        student_user_code_raw="STU-2",
         status=AllocationImportRow.Status.FAILED,
         error_message="Room not found.",
     )

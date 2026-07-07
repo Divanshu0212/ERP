@@ -71,7 +71,7 @@ def _apply_outcome(allocation: Allocation, outcome: str, tenant_id) -> None:
             tenant_id=tenant_id,
             payload={
                 "allocation_id": str(allocation.id),
-                "student_id": str(allocation.student_id),
+                "student_user_code": allocation.student_user_code,
                 "room_id": str(allocation.room_id),
             },
         )
@@ -86,7 +86,7 @@ def _apply_outcome(allocation: Allocation, outcome: str, tenant_id) -> None:
             tenant_id=tenant_id,
             payload={
                 "allocation_id": str(allocation.id),
-                "student_id": str(allocation.student_id),
+                "student_user_code": allocation.student_user_code,
                 "room_id": str(allocation.room_id),
             },
         )
