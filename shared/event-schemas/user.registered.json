@@ -14,9 +14,9 @@
     "payload": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["user_id", "role"],
+      "required": ["user_code", "role"],
       "properties": {
-        "user_id": { "type": "string", "format": "uuid" },
+        "user_code": { "type": "string", "maxLength": 30 },
         "role": { "type": "string", "description": "Role assigned at registration (e.g. student, warden, admin)." }
       }
     }

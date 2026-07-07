@@ -14,10 +14,10 @@
     "payload": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["invoice_id", "student_id", "allocation_id", "amount", "purpose"],
+      "required": ["invoice_id", "student_user_code", "allocation_id", "amount", "purpose"],
       "properties": {
         "invoice_id": { "type": "string", "format": "uuid" },
-        "student_id": { "type": "string", "format": "uuid" },
+        "student_user_code": { "type": "string", "maxLength": 30 },
         "allocation_id": { "type": "string", "format": "uuid" },
         "amount": { "type": "string", "description": "Decimal amount serialized as a string (e.g. \"5000.00\")." },
         "purpose": { "type": "string", "description": "Invoice purpose, e.g. \"hostel\"." }

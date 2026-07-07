@@ -14,10 +14,10 @@
     "payload": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["invoice_id", "student_id", "purpose"],
+      "required": ["invoice_id", "student_user_code", "purpose"],
       "properties": {
         "invoice_id": { "type": "string", "format": "uuid" },
-        "student_id": { "type": "string", "format": "uuid" },
+        "student_user_code": { "type": "string", "maxLength": 30 },
         "purpose": { "type": "string" }
       }
     }

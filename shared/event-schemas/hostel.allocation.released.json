@@ -14,10 +14,10 @@
     "payload": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["allocation_id", "student_id", "room_id"],
+      "required": ["allocation_id", "student_user_code", "room_id"],
       "properties": {
         "allocation_id": { "type": "string", "format": "uuid" },
-        "student_id": { "type": "string", "format": "uuid" },
+        "student_user_code": { "type": "string", "maxLength": 30 },
         "room_id": { "type": "string", "format": "uuid" }
       }
     }
