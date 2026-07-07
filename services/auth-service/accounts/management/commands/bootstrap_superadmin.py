@@ -46,7 +46,7 @@ class Command(BaseCommand):
             superadmin = User.objects.filter(tenant=platform, email=email).first()
             if superadmin is not None:
                 self.stdout.write(
-                    f"Superadmin {email} already exists in platform ({superadmin.id}); skipping."
+                    f"Superadmin {email} already exists in platform; skipping."
                 )
             else:
                 superadmin = User.objects.create_superuser(
@@ -56,9 +56,9 @@ class Command(BaseCommand):
                     role=User.Role.SUPERADMIN,
                 )
                 self.stdout.write(
-                    self.style.SUCCESS(f"Created superadmin {email} ({superadmin.id}).")
+                    self.style.SUCCESS(f"Created superadmin {email}.")
                 )
 
         self.stdout.write(
-            f"institution_id={platform.id} superadmin_id={superadmin.id} login_slug={PLATFORM_SLUG}"
+            f"institution_id={platform.id} login_slug={PLATFORM_SLUG}"
         )
