@@ -11,14 +11,14 @@ from rest_framework import serializers
 class InvoiceSerializer(serializers.ModelSerializer):
     class Meta:
         model = Invoice
-        fields = ["id", "student_id", "amount", "purpose", "status", "created_at"]
+        fields = ["id", "student_user_code", "amount", "purpose", "status", "created_at"]
         read_only_fields = ["id", "status", "created_at"]
 
 
 class InvoiceCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = Invoice
-        fields = ["student_id", "amount", "purpose"]
+        fields = ["student_user_code", "amount", "purpose"]
 
 
 class PaySerializer(serializers.Serializer):

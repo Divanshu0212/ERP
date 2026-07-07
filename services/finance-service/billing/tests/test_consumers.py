@@ -29,7 +29,7 @@ def _auth_client(tenant_id, role="student", user_id=None):
 def _event(tenant_id, **payload_overrides):
     payload = {
         "allocation_id": str(uuid.uuid4()),
-        "student_id": str(uuid.uuid4()),
+        "student_user_code": "STU-100",
         "room_id": str(uuid.uuid4()),
         "fee_structure_id": None,
         "university_name": "",
@@ -75,11 +75,14 @@ def test_missing_fee_structure_id_falls_back_gracefully():
     assert invoice.amount == Decimal("5000.00")
 
 
-def _hostel_allocation_requested_event(tenant_id, student_id, fee_structure_id, university_name):
+def _hostel_allocation_requested_event(
+    tenant_id, student_user_code, fee_structure_id, university_name
+):
     """Build a ``hostel.allocation.requested`` event with the LITERAL payload
     shape hostel-service's ``create_allocation()`` emits via ``publish_event``
     (services/hostel-service/hostel/services.py): payload keys ``allocation_id``,
-    ``student_id``, ``room_id`` (all str-of-UUID), ``fee_structure_id`` (str or
+    ``student_user_code``, ``room_id`` (allocation_id/room_id are str-of-UUID,
+    student_user_code is a bare user_code string), ``fee_structure_id`` (str or
     None), ``university_name`` (str). Uses that exact shape as the input rather
     than a simplified stand-in, so this test spans the finance half of the chain
     against hostel's real boundary contract.
@@ -90,7 +93,7 @@ def _hostel_allocation_requested_event(tenant_id, student_id, fee_structure_id, 
         "tenant_id": str(tenant_id),
         "payload": {
             "allocation_id": str(uuid.uuid4()),
-            "student_id": str(student_id),
+            "student_user_code": student_user_code,
             "room_id": str(uuid.uuid4()),
             "fee_structure_id": str(fee_structure_id) if fee_structure_id else None,
             "university_name": university_name,
@@ -106,13 +109,13 @@ def test_full_chain_from_hostel_event_payload_shape_to_verified_receipt():
     realistic boundary a single test can span given DB-per-service (no shared
     test DB / live event bus between hostel- and finance-service)."""
     tenant_id = uuid.uuid4()
-    student_id = uuid.uuid4()
+    student_user_code = "STU-100"
     fee = FeeStructure.all_objects.create(
         tenant_id=tenant_id, name="Hostel Fee 2026", amount=Decimal("7500.00"), purpose="hostel"
     )
 
     event = _hostel_allocation_requested_event(
-        tenant_id, student_id, fee_structure_id=fee.id, university_name="Test University"
+        tenant_id, student_user_code, fee_structure_id=fee.id, university_name="Test University"
     )
 
     # Step 1: finance consumes hostel's event -> pending invoice.
@@ -122,7 +125,7 @@ def test_full_chain_from_hostel_event_payload_shape_to_verified_receipt():
     assert invoice.university_name == "Test University"
 
     # Step 2: the student pays that invoice through the real PayView endpoint.
-    student_client = _auth_client(tenant_id, role="student", user_id=student_id)
+    student_client = _auth_client(tenant_id, role="student", user_id=student_user_code)
     pay_response = student_client.post(
         "/api/v1/finance/pay",
         {"invoice_id": str(invoice.id), "idempotency_key": "chain-idem-1"},

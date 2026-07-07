@@ -72,14 +72,15 @@ def _resolve_hostel_fee_amount(tenant_id, fee_structure_id) -> Decimal:
 def handle_allocation_requested(event: dict) -> None:
     """Handle ``hostel.allocation.requested``: create a pending hostel Invoice.
 
-    Expects ``event["payload"]`` to contain ``allocation_id``, ``student_id``,
-    ``room_id``, and (new) ``fee_structure_id``/``university_name`` — both
-    optional, present only when the allocation came from warden room-request
-    approval rather than the direct AllocateView/AllocateBulkView path.
+    Expects ``event["payload"]`` to contain ``allocation_id``,
+    ``student_user_code``, ``room_id``, and (new) ``fee_structure_id``/
+    ``university_name`` — both optional, present only when the allocation
+    came from warden room-request approval rather than the direct
+    AllocateView/AllocateBulkView path.
     """
     tenant_id = event["tenant_id"]
     payload = event["payload"]
-    student_id = payload["student_id"]
+    student_user_code = payload["student_user_code"]
     allocation_id = payload["allocation_id"]
     fee_structure_id = payload.get("fee_structure_id")
     university_name = payload.get("university_name") or ""
@@ -89,7 +90,7 @@ def handle_allocation_requested(event: dict) -> None:
     with transaction.atomic():
         invoice = Invoice.all_objects.create(
             tenant_id=tenant_id,
-            student_id=student_id,
+            student_user_code=student_user_code,
             amount=amount,
             purpose="hostel",
             status=Invoice.Status.PENDING,
@@ -101,7 +102,7 @@ def handle_allocation_requested(event: dict) -> None:
             tenant_id=tenant_id,
             payload={
                 "invoice_id": str(invoice.id),
-                "student_id": student_id,
+                "student_user_code": student_user_code,
                 "allocation_id": allocation_id,
                 "amount": str(amount),
                 "purpose": "hostel",

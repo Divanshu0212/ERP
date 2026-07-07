@@ -6,9 +6,10 @@ authority and has documented reasons to deviate from TenantModel). ``objects``
 is transparently scoped to the active tenant; ``all_objects`` bypasses scoping
 for system operations.
 
-``Invoice.student_id`` is a bare UUID, not a ForeignKey: student-service owns
-the Student table in its own database (DB-per-service), so finance-service can
-only ever hold an opaque reference to it, never a real FK.
+``Invoice.student_user_code`` is a bare user_code string, not a ForeignKey:
+student-service owns the Student table in its own database (DB-per-service),
+so finance-service can only ever hold an opaque reference to it, never a
+real FK.
 """
 
 import uuid
@@ -42,9 +43,9 @@ class Invoice(TenantModel):
         FAILED = "failed", "Failed"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    # Reference to student-service's Student table. No cross-service FK
-    # (DB-per-service) — this is a bare, opaque UUID.
-    student_id = models.UUIDField()
+    # Reference to student-service's Student table. Bare user_code string
+    # (DB-per-service) — no cross-service FK.
+    student_user_code = models.CharField(max_length=30)
     amount = models.DecimalField(max_digits=10, decimal_places=2)
     purpose = models.CharField(max_length=100)
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING)
@@ -63,7 +64,9 @@ class Invoice(TenantModel):
     class Meta:
         indexes = [
             models.Index(fields=["tenant_id", "status"], name="invoice_tenant_status"),
-            models.Index(fields=["tenant_id", "student_id"], name="invoice_tenant_student"),
+            models.Index(
+                fields=["tenant_id", "student_user_code"], name="invoice_tenant_student"
+            ),
         ]
 
     def __str__(self):

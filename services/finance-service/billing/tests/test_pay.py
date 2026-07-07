@@ -45,10 +45,10 @@ def _auth_client(tenant_id, **kwargs):
     return client
 
 
-def _make_invoice(tenant_id, amount="100.00", purpose="hostel", student_id=None):
+def _make_invoice(tenant_id, amount="100.00", purpose="hostel", student_user_code=None):
     return Invoice.all_objects.create(
         tenant_id=tenant_id,
-        student_id=student_id or uuid.uuid4(),
+        student_user_code=student_user_code or "STU-100",
         amount=amount,
         purpose=purpose,
     )
@@ -83,7 +83,7 @@ def test_pay_success_marks_invoice_paid_creates_payment_and_emits_event():
     event = events.first()
     assert str(event.tenant_id) == str(tenant_id)
     assert event.payload["invoice_id"] == str(invoice.id)
-    assert event.payload["student_id"] == str(invoice.student_id)
+    assert event.payload["student_user_code"] == invoice.student_user_code
     assert event.payload["purpose"] == "hostel"
     assert event.payload["amount"] == "100.00"
 
@@ -117,7 +117,7 @@ def test_pay_failure_marks_invoice_failed_creates_payment_and_emits_event():
     assert events.count() == 1
     event = events.first()
     assert event.payload["invoice_id"] == str(invoice.id)
-    assert event.payload["student_id"] == str(invoice.student_id)
+    assert event.payload["student_user_code"] == invoice.student_user_code
     assert event.payload["purpose"] == "tuition"
 
     assert OutboxEvent.objects.filter(type="finance.payment.success").count() == 0

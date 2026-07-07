@@ -24,13 +24,13 @@ def test_tenant_scoping_isolates_invoices_by_tenant():
 
     invoice_a = Invoice.all_objects.create(
         tenant_id=tenant_a,
-        student_id=uuid.uuid4(),
+        student_user_code="STU-100",
         amount="100.00",
         purpose="hostel",
     )
     invoice_b = Invoice.all_objects.create(
         tenant_id=tenant_b,
-        student_id=uuid.uuid4(),
+        student_user_code="STU-200",
         amount="200.00",
         purpose="tuition",
     )
@@ -49,7 +49,7 @@ def test_tenant_scoping_isolates_invoices_by_tenant():
 def test_invoice_default_status_is_pending():
     invoice = Invoice.all_objects.create(
         tenant_id=uuid.uuid4(),
-        student_id=uuid.uuid4(),
+        student_user_code="STU-100",
         amount="50.00",
         purpose="hostel",
     )
@@ -60,7 +60,7 @@ def test_payment_attaches_to_invoice():
     tenant = uuid.uuid4()
     invoice = Invoice.all_objects.create(
         tenant_id=tenant,
-        student_id=uuid.uuid4(),
+        student_user_code="STU-100",
         amount="50.00",
         purpose="hostel",
     )
