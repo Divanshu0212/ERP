@@ -6,9 +6,9 @@ tenant; ``all_objects`` bypasses scoping for system operations (event consumers
 that resolve tenant from the event payload).
 
 ``Ticket.raised_by`` (the student) and ``Ticket.assigned_to`` (a warden/admin)
-are bare UUIDs, not ForeignKeys: auth-service owns those User rows in its own
-database (DB-per-service), so grievance-service can only ever hold an opaque
-reference to them, never a real FK. ``TicketComment.ticket`` IS a real
+are bare user_code strings, not ForeignKeys: auth-service owns those User rows
+in its own database (DB-per-service), so grievance-service can only ever hold
+an opaque reference to them, never a real FK. ``TicketComment.ticket`` IS a real
 ForeignKey since both models live in this same database.
 """
 
@@ -40,8 +40,9 @@ class Ticket(TenantModel):
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     # Reference to auth-service's User table (the student who raised the
-    # grievance). No cross-service FK (DB-per-service) — bare opaque UUID.
-    raised_by = models.UUIDField()
+    # grievance), by user_code. No cross-service FK (DB-per-service) — bare
+    # opaque string.
+    raised_by = models.CharField(max_length=30)
     # Free-form category label (not constrained to Category.choices at the DB
     # level so new categories can be added without a migration).
     category = models.CharField(max_length=50)
@@ -50,8 +51,8 @@ class Ticket(TenantModel):
     sentiment_score = models.FloatField(null=True, blank=True)
     urgency = models.CharField(max_length=20, choices=Urgency.choices, null=True, blank=True)
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.OPEN)
-    # Reference to auth-service's User table (a warden/admin). Bare UUID.
-    assigned_to = models.UUIDField(null=True, blank=True)
+    # Reference to auth-service's User table (a warden/admin), by user_code.
+    assigned_to = models.CharField(max_length=30, null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -67,7 +68,7 @@ class Ticket(TenantModel):
 class TicketComment(TenantModel):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     ticket = models.ForeignKey(Ticket, on_delete=models.CASCADE, related_name="comments")
-    comment_by = models.UUIDField()
+    comment_by = models.CharField(max_length=30)
     text = models.TextField()
     created_at = models.DateTimeField(auto_now_add=True)
 

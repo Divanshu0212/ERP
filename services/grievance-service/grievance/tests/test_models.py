@@ -14,10 +14,14 @@ from suerp_common.tenancy import set_current_tenant
 pytestmark = pytest.mark.django_db
 
 
+def _student_code():
+    return f"STU{uuid.uuid4().hex[:27]}"
+
+
 def _make_ticket(tenant_id, raised_by=None, category="hostel", description="Leaky tap"):
     return Ticket.all_objects.create(
         tenant_id=tenant_id,
-        raised_by=raised_by or uuid.uuid4(),
+        raised_by=raised_by or _student_code(),
         category=category,
         description=description,
     )
@@ -54,7 +58,7 @@ def test_ticket_comment_relation():
     ticket = _make_ticket(tenant_id)
     comment = ticket.comments.create(
         tenant_id=tenant_id,
-        comment_by=uuid.uuid4(),
+        comment_by=_student_code(),
         text="Looking into it.",
     )
     assert list(ticket.comments.all()) == [comment]

@@ -24,9 +24,13 @@ from suerp_common.outbox import OutboxEvent
 pytestmark = pytest.mark.django_db
 
 
+def _student_code():
+    return f"STU{uuid.uuid4().hex[:27]}"
+
+
 def _make_token(tenant_id, user_id=None, role="student"):
     claims = {
-        "sub": str(user_id or uuid.uuid4()),
+        "sub": user_id or _student_code(),
         "role": role,
         "tenant": str(tenant_id),
     }
@@ -42,7 +46,7 @@ def _auth_client(tenant_id, **kwargs):
 
 def test_create_grievance_returns_201_and_creates_open_ticket():
     tenant_id = uuid.uuid4()
-    student_id = uuid.uuid4()
+    student_id = _student_code()
     client = _auth_client(tenant_id, user_id=student_id)
 
     response = client.post(
@@ -56,18 +60,18 @@ def test_create_grievance_returns_201_and_creates_open_ticket():
     assert body["success"] is True
     assert body["data"]["status"] == "open"
     assert body["data"]["category"] == "hostel"
-    assert str(body["data"]["raised_by"]) == str(student_id)
+    assert body["data"]["raised_by"] == student_id
 
     tickets = Ticket.all_objects.filter(tenant_id=tenant_id)
     assert tickets.count() == 1
     ticket = tickets.first()
-    assert str(ticket.raised_by) == str(student_id)
+    assert ticket.raised_by == student_id
     assert ticket.status == "open"
 
 
 def test_create_grievance_emits_single_grievance_created_event():
     tenant_id = uuid.uuid4()
-    student_id = uuid.uuid4()
+    student_id = _student_code()
     client = _auth_client(tenant_id, user_id=student_id)
 
     response = client.post(
@@ -84,7 +88,7 @@ def test_create_grievance_emits_single_grievance_created_event():
     assert str(event.tenant_id) == str(tenant_id)
     assert event.payload == {
         "ticket_id": str(ticket.id),
-        "raised_by": str(student_id),
+        "raised_by": student_id,
         "text": "Grades not uploaded.",
     }
 

@@ -16,9 +16,13 @@ from rest_framework.test import APIClient
 pytestmark = pytest.mark.django_db
 
 
+def _student_code():
+    return f"STU{uuid.uuid4().hex[:27]}"
+
+
 def _make_token(tenant_id, user_id=None, role="student"):
     claims = {
-        "sub": str(user_id or uuid.uuid4()),
+        "sub": user_id or _student_code(),
         "role": role,
         "tenant": str(tenant_id),
     }
@@ -43,8 +47,8 @@ def _make_ticket(tenant_id, raised_by, category="hostel"):
 
 def test_student_sees_only_their_own_tickets():
     tenant_id = uuid.uuid4()
-    student_a = uuid.uuid4()
-    student_b = uuid.uuid4()
+    student_a = _student_code()
+    student_b = _student_code()
     mine = _make_ticket(tenant_id, student_a)
     _make_ticket(tenant_id, student_b)
 
@@ -59,8 +63,8 @@ def test_student_sees_only_their_own_tickets():
 
 def test_warden_sees_all_tickets_in_tenant():
     tenant_id = uuid.uuid4()
-    student_a = uuid.uuid4()
-    student_b = uuid.uuid4()
+    student_a = _student_code()
+    student_b = _student_code()
     t1 = _make_ticket(tenant_id, student_a)
     t2 = _make_ticket(tenant_id, student_b)
 
@@ -76,7 +80,7 @@ def test_warden_sees_all_tickets_in_tenant():
 def test_list_is_tenant_isolated():
     tenant_a = uuid.uuid4()
     tenant_b = uuid.uuid4()
-    _make_ticket(tenant_b, uuid.uuid4())
+    _make_ticket(tenant_b, _student_code())
 
     # Warden in tenant A sees nothing from tenant B.
     client = _auth_client(tenant_a, role="warden")
@@ -88,7 +92,7 @@ def test_list_is_tenant_isolated():
 
 def test_retrieve_own_ticket():
     tenant_id = uuid.uuid4()
-    student = uuid.uuid4()
+    student = _student_code()
     ticket = _make_ticket(tenant_id, student)
 
     client = _auth_client(tenant_id, user_id=student, role="student")
@@ -100,8 +104,8 @@ def test_retrieve_own_ticket():
 
 def test_retrieve_other_users_ticket_is_forbidden_for_student():
     tenant_id = uuid.uuid4()
-    owner = uuid.uuid4()
-    other = uuid.uuid4()
+    owner = _student_code()
+    other = _student_code()
     ticket = _make_ticket(tenant_id, owner)
 
     client = _auth_client(tenant_id, user_id=other, role="student")
@@ -112,7 +116,7 @@ def test_retrieve_other_users_ticket_is_forbidden_for_student():
 
 def test_warden_can_retrieve_any_ticket_in_tenant():
     tenant_id = uuid.uuid4()
-    owner = uuid.uuid4()
+    owner = _student_code()
     ticket = _make_ticket(tenant_id, owner)
 
     client = _auth_client(tenant_id, role="warden")
