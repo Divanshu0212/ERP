@@ -9,8 +9,7 @@ class StudentProfileSerializer(serializers.ModelSerializer):
         model = StudentProfile
         fields = [
             "id",
-            "user_id",
-            "roll_no",
+            "user_code",
             "department",
             "batch",
             "semester",
