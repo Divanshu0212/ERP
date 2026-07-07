@@ -92,6 +92,5 @@ Subagent-driven: for each task — `bash <superpowers>/skills/subagent-driven-de
 
 ---
 
-## RESUME PROMPT (paste this into the new session)
 
-> Continue building the SU-ERP multi-tenant university ERP. Read `docs/superpowers/HANDOFF.md` first — it has the full state, locked decisions, my preferences (commit as Divanshu0212 only/no Claude trailer, commit after each subphase, no useless docs, use Opus 4.8 for implementer subagents), and what's done vs remaining. The build is on branch `phase-1-foundation` at commit `e8181ad`; Phases 0–8 are complete and reviewed (~143 tests passing across suerp_common + 7 hero services + ai-service + 7 stubs; the hostel↔finance saga and the grievance ML auto-escalation both work end-to-end). Continue with Phase 9 (Nginx gateway + add all services to docker-compose), Phase 10 (Next.js frontend with role dashboards + saga/escalation demo pages), and Phase 11 (GitHub Actions CI, Prometheus/Grafana wiring, root README + event-schemas). Use subagent-driven-development: implementer on Opus 4.8, reviewer per task, commit after each. Follow the plan at `docs/superpowers/plans/2026-07-03-su-erp-multitenant.md`. FINALLY, write `docs/REMAINING_MODULES.md` comparing the original `University_ERP_Capstone_Documentation.md` catalogue against what's built (fully built / stubbed / designed-but-not-built), per section 6 of the handoff. Don't reconfirm design decisions mid-build — just implement.
+

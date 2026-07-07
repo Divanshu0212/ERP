@@ -72,7 +72,7 @@ Create the first superadmin from the CLI:
 ```bash
 docker compose -f infra/docker-compose.yml exec auth-service \
   python manage.py bootstrap_superadmin \
-  --email super@suerp.io --password 'ChangeMe!Str0ng'
+  --email super@suerp.io --password 'Sup3rStr0ng!'
 ```
 
 This creates an internal `platform` institution and a `superadmin` user in it.
@@ -199,3 +199,24 @@ The dev defaults are intentionally permissive. Before any non-local exposure:
 - Lock the gateway CORS origin to the real frontend domain (not any localhost).
 - Harden RabbitMQ credentials; pin image digests.
 - See the "Known hardening TODOs" in the root README.
+
+
+## 11. Final Docker Commands
+From §6. Compose profiles in the RUNBOOK:
+
+Without Prometheus (default — ~22 containers, laptop-friendly):
+
+
+docker compose -f infra/docker-compose.yml up --build -d
+With Prometheus + Grafana observability:
+
+
+docker compose -f infra/docker-compose.yml --profile observability up --build -d
+All services (heavy — 30+ containers):
+
+
+docker compose -f infra/docker-compose.yml --profile full --profile observability up --build -d
+Just the extra microservices (without observability):
+
+
+docker compose -f infra/docker-compose.yml --profile full up --build -d
