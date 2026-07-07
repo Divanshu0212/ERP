@@ -28,7 +28,7 @@ def _clear_cache():
 
 
 def _make_token(tenant_id, user_id=None, role="student"):
-    claims = {"sub": str(user_id or uuid.uuid4()), "role": role, "tenant": str(tenant_id)}
+    claims = {"sub": user_id or f"STU-{uuid.uuid4().hex[:8]}", "role": role, "tenant": str(tenant_id)}
     return jwt.encode(claims, settings.JWT_SIGNING_KEY, algorithm="HS256")
 
 
@@ -46,7 +46,7 @@ def _make_route_with_schedule(tenant_id, capacity=3):
         tenant_id=tenant_id,
         route=route,
         bus_no="BUS-1",
-        driver_id=uuid.uuid4(),
+        driver_id="DRV-001",
         departure_time=timezone.now(),
         capacity=capacity,
     )

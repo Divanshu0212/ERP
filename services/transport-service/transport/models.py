@@ -5,10 +5,11 @@ is a normal resource service. ``objects`` is transparently scoped to the active
 tenant; ``all_objects`` bypasses scoping for system operations (event consumers
 that resolve tenant from the event payload, migrations, admin tooling).
 
-``BusSchedule.driver_id``, ``Booking.student_id``, and ``Pass.student_id`` are
-bare UUIDs, not ForeignKeys: auth-service/student-service owns those rows in its
-own database (DB-per-service), so transport-service can only ever hold an opaque
-reference to them, never a real FK. ``Stop.route``/``BusSchedule.route``/
+``BusSchedule.driver_id``, ``Booking.student_user_code``, and
+``Pass.student_user_code`` are bare opaque codes, not ForeignKeys:
+auth-service/student-service owns those rows in its own database
+(DB-per-service), so transport-service can only ever hold an opaque reference
+to them (the user_code), never a real FK. ``Stop.route``/``BusSchedule.route``/
 ``Booking.schedule``/``Pass.route`` ARE real ForeignKeys since Route/BusSchedule
 live in this same database.
 
@@ -53,9 +54,8 @@ class BusSchedule(TenantModel):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     route = models.ForeignKey(Route, on_delete=models.CASCADE, related_name="schedules")
     bus_no = models.CharField(max_length=50)
-    # Reference to auth-service's User table (the driver). No cross-service FK
-    # (DB-per-service) — this is a bare, opaque UUID.
-    driver_id = models.UUIDField()
+    # Reference to auth-service's User table (the driver), by user_code.
+    driver_id = models.CharField(max_length=30)
     departure_time = models.DateTimeField()
     capacity = models.PositiveSmallIntegerField()
 
@@ -70,9 +70,8 @@ class Booking(TenantModel):
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     schedule = models.ForeignKey(BusSchedule, on_delete=models.CASCADE, related_name="bookings")
-    # Reference to student-service's Student table. No cross-service FK
-    # (DB-per-service) — this is a bare, opaque UUID.
-    student_id = models.UUIDField()
+    # Reference to student-service's Student, by user_code.
+    student_user_code = models.CharField(max_length=30)
     seat_no = models.PositiveSmallIntegerField()
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.BOOKED)
     idempotency_key = models.CharField(max_length=255, null=True, blank=True)
@@ -100,9 +99,7 @@ class Booking(TenantModel):
 
 class Pass(TenantModel):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    # Reference to student-service's Student table. No cross-service FK
-    # (DB-per-service) — this is a bare, opaque UUID.
-    student_id = models.UUIDField()
+    student_user_code = models.CharField(max_length=30)
     route = models.ForeignKey(
         Route, on_delete=models.SET_NULL, related_name="passes", null=True, blank=True
     )
