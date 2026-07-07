@@ -27,13 +27,25 @@ the "how do I find this user" mechanism everywhere except the login form itself.
 2. **Field name: `user_code`**, uniform across every role and every service. No
    role-conditional naming (not `roll_no` for students only).
 3. **Format:** alphanumeric + hyphen/underscore, max 30 chars. Admin enters it
-   manually at user-creation time (no auto-generation). Unique per tenant (same
-   uniqueness scope as email today: `UniqueConstraint(fields=["tenant", "user_code"])`).
+   manually at user-creation time (no auto-generation). **Globally unique**, not
+   merely per-tenant — corrected during Task 1 implementation: `user_code` is the
+   literal single-column primary key (decision 1), and a single-column SQL primary
+   key is unique across the whole table by definition, so "unique per tenant" was
+   never achievable alongside a scalar pk. The `UniqueConstraint(fields=["tenant",
+   "user_code"])` is kept as a redundant, documented superset for symmetry with
+   `unique_email_per_tenant`, but the real uniqueness boundary is the pk itself.
 4. **Login stays email + password + institution_slug.** `user_code` is not a login
    credential — it's the internal/display/lookup identifier everywhere else
    (URLs, cross-service FKs, JWT `sub`, admin search, profile display).
-5. **Superadmin fully excluded.** Superadmin keeps UUID `id`, email login, no
-   `user_code`, no `UserProfile` row, no profile tab. Platform-bootstrap account only.
+5. **Superadmin fully excluded.** Superadmin gets no admin-facing `user_code` (no
+   `UserProfile` row, no profile tab, never assigned or displayed one) — but since
+   `user_code` is now the table's own primary key, a nullable pk isn't possible on
+   any real backend (Postgres/Django both reject it). Superadmin instead gets a
+   system-generated, non-admin-facing placeholder pk value (implementation:
+   `"~" + random hex`, outside the admin-assignable `^[A-Za-z0-9_-]{1,30}$` charset
+   so it can never collide with or be mistaken for a real code). Check
+   `user.has_user_code` (`False` only for superadmin), not `user.user_code is None`.
+   Superadmin still keeps email login. Platform-bootstrap account only.
 6. **Profile data home: new `UserProfile` model in auth-service**, 1:1 with `User`
    (pk = `user_code` FK), same DB. Fields: `phone`, `address`, `date_of_birth`,
    `gender`, `emergency_contact_name`, `emergency_contact_phone`, `blood_group`,
@@ -92,6 +104,10 @@ the "how do I find this user" mechanism everywhere except the login form itself.
 
 ```python
 class User(AbstractBaseUser, PermissionsMixin):
+    # Globally unique (a single-column pk is unique table-wide on every SQL
+    # backend — "unique per tenant" alone isn't achievable here, see decision 3
+    # above). NOT NULL always — superadmin gets a system-generated placeholder,
+    # never a real null (see below and User.has_user_code).
     user_code = models.CharField(max_length=30, primary_key=True)  # was: id UUIDField pk
     tenant = models.ForeignKey(Institution, ...)
     email = models.EmailField()
@@ -103,16 +119,27 @@ class User(AbstractBaseUser, PermissionsMixin):
     class Meta:
         constraints = [
             UniqueConstraint(fields=["tenant", "email"], name="unique_email_per_tenant"),
+            # Redundant with the pk's own global uniqueness — kept for symmetry
+            # with unique_email_per_tenant and to document intent at the DB level.
             UniqueConstraint(fields=["tenant", "user_code"], name="unique_user_code_per_tenant"),
         ]
+
+    @property
+    def has_user_code(self) -> bool:
+        """False only for superadmin, whose user_code is a system-generated
+        placeholder, never an admin-assigned or admin-facing value."""
+        return self.role != Role.SUPERADMIN
 ```
 
-Superadmin: created via `bootstrap_superadmin` management command, keeps `user_code`
-null/unused — simplest correct approach is superadmin stays on a **separate code path**:
-`User.user_code` is nullable, populated for every role except `superadmin`, with a
-partial unique constraint (`UniqueConstraint(..., condition=~Q(role="superadmin"))`)
-so multiple superadmins (across institutions, if that ever happens) never collide on
-a shared null.
+Superadmin: created via `bootstrap_superadmin` management command. Since `user_code`
+is the table's own primary key, a nullable pk is impossible on any real backend
+(Postgres and Django's own system checks both reject `null=True` on a pk field).
+Superadmin instead gets a system-generated, non-admin-facing placeholder pk (e.g.
+`"~" + secrets.token_hex(...)`) — `~` falls outside the admin-assignable
+`^[A-Za-z0-9_-]{1,30}$` character class enforced elsewhere, so it can never collide
+with or be mistaken for a real, admin-entered code. Code that needs "does this user
+have a real code" must check `user.has_user_code`, not `user.user_code is None`
+(which is never true).
 
 New model:
 
