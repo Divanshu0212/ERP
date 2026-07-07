@@ -40,14 +40,14 @@ def test_list_is_tenant_scoped():
     tenant_b = uuid.uuid4()
     AttendanceRecord.all_objects.create(
         tenant_id=tenant_a,
-        student_id=uuid.uuid4(),
+        student_user_code="STU001",
         course_id=uuid.uuid4(),
         date="2026-01-01",
         status="present",
     )
     AttendanceRecord.all_objects.create(
         tenant_id=tenant_b,
-        student_id=uuid.uuid4(),
+        student_user_code="STU002",
         course_id=uuid.uuid4(),
         date="2026-01-01",
         status="absent",
