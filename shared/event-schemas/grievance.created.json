@@ -17,7 +17,7 @@
       "required": ["ticket_id", "raised_by", "text"],
       "properties": {
         "ticket_id": { "type": "string", "format": "uuid" },
-        "raised_by": { "type": "string", "format": "uuid", "description": "User id of the student who raised the ticket." },
+        "raised_by": { "type": "string", "maxLength": 30, "description": "user_code of the student who raised the ticket." },
         "text": { "type": "string", "description": "Free-text grievance description scored by ai-service." }
       }
     }
