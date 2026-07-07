@@ -25,7 +25,7 @@ pytestmark = pytest.mark.django_db
 
 def _make_token(tenant_id, user_id=None, role="student"):
     claims = {
-        "sub": str(user_id or uuid.uuid4()),
+        "sub": user_id or f"STU-{uuid.uuid4().hex[:8]}",
         "role": role,
         "tenant": str(tenant_id),
     }
@@ -47,7 +47,7 @@ def _make_schedule(tenant_id, capacity=40, bus_no="BUS-1"):
         tenant_id=tenant_id,
         route=route,
         bus_no=bus_no,
-        driver_id=uuid.uuid4(),
+        driver_id="DRV-001",
         departure_time=timezone.now(),
         capacity=capacity,
     )
@@ -56,12 +56,16 @@ def _make_schedule(tenant_id, capacity=40, bus_no="BUS-1"):
 def test_booking_available_seat_returns_201_and_creates_one_booking():
     tenant_id = uuid.uuid4()
     schedule = _make_schedule(tenant_id)
-    student_id = uuid.uuid4()
+    student_user_code = "STU-100"
     client = _auth_client(tenant_id)
 
     response = client.post(
         "/api/v1/transport/bookings",
-        {"schedule_id": str(schedule.id), "seat_no": 5, "student_id": str(student_id)},
+        {
+            "schedule_id": str(schedule.id),
+            "seat_no": 5,
+            "student_user_code": student_user_code,
+        },
         format="json",
     )
 
@@ -145,8 +149,8 @@ def test_tenant_b_cannot_book_on_tenant_a_schedule():
 def test_booking_derives_student_from_jwt_sub_when_omitted():
     tenant_id = uuid.uuid4()
     schedule = _make_schedule(tenant_id)
-    student_id = uuid.uuid4()
-    client = _auth_client(tenant_id, user_id=student_id)
+    student_user_code = "STU-100"
+    client = _auth_client(tenant_id, user_id=student_user_code)
 
     response = client.post(
         "/api/v1/transport/bookings",
@@ -156,7 +160,7 @@ def test_booking_derives_student_from_jwt_sub_when_omitted():
 
     assert response.status_code == 201
     booking = Booking.all_objects.get(id=response.json()["data"]["id"])
-    assert str(booking.student_id) == str(student_id)
+    assert booking.student_user_code == student_user_code
 
 
 def test_routes_list_is_tenant_scoped_and_paginated():

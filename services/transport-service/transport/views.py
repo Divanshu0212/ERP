@@ -85,7 +85,7 @@ class BookingCreateView(APIView):
         seat_no = serializer.validated_data["seat_no"]
         idempotency_key = serializer.validated_data.get("idempotency_key")
         # Derive student from the request body, else from the JWT ``sub`` claim.
-        student_id = serializer.validated_data.get("student_id") or request.user.id
+        student_user_code = serializer.validated_data.get("student_user_code") or request.user.id
 
         with transaction.atomic():
             # Tenant-scoped lookup + row lock. A schedule from another tenant
@@ -112,7 +112,7 @@ class BookingCreateView(APIView):
                     booking = Booking.objects.create(
                         tenant_id=tenant_id,
                         schedule=schedule,
-                        student_id=student_id,
+                        student_user_code=student_user_code,
                         seat_no=seat_no,
                         status=Booking.Status.BOOKED,
                         idempotency_key=idempotency_key,

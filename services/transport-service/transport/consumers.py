@@ -37,10 +37,10 @@ TRANSPORT_PURPOSES = {"transport", "bus_pass"}
 def handle_payment_success(event: dict) -> None:
     """Handle ``finance.payment.success``: activate a seasonal Pass.
 
-    Expects ``event["payload"]`` to contain ``student_id`` and ``purpose``, and
-    ``event["tenant_id"]`` at the top level of the envelope. Non-transport
-    purposes are skipped (no Pass created). ``route_id``/``valid_from``/
-    ``valid_to`` are optional in the payload.
+    Expects ``event["payload"]`` to contain ``student_user_code`` and
+    ``purpose``, and ``event["tenant_id"]`` at the top level of the envelope.
+    Non-transport purposes are skipped (no Pass created). ``route_id``/
+    ``valid_from``/``valid_to`` are optional in the payload.
     """
     tenant_id = event["tenant_id"]
     payload = event["payload"]
@@ -51,7 +51,7 @@ def handle_payment_success(event: dict) -> None:
         # routing key — not ours to act on.
         return
 
-    student_id = payload["student_id"]
+    student_user_code = payload["student_user_code"]
     route_id = payload.get("route_id")
     valid_from = payload.get("valid_from")
     valid_to = payload.get("valid_to")
@@ -69,16 +69,18 @@ def handle_payment_success(event: dict) -> None:
 
         _pass, created = Pass.all_objects.update_or_create(
             tenant_id=tenant_id,
-            student_id=student_id,
+            student_user_code=student_user_code,
             defaults=defaults,
         )
         if created:
             logger.info(
-                "Activated new transport Pass for student=%s tenant=%s", student_id, tenant_id
+                "Activated new transport Pass for student=%s tenant=%s",
+                student_user_code, tenant_id,
             )
         else:
             logger.info(
-                "Reactivated transport Pass for student=%s tenant=%s", student_id, tenant_id
+                "Reactivated transport Pass for student=%s tenant=%s",
+                student_user_code, tenant_id,
             )
 
 

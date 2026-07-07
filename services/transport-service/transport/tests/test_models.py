@@ -32,17 +32,17 @@ def _make_schedule(tenant_id, route=None, capacity=40, bus_no="BUS-1"):
         tenant_id=tenant_id,
         route=route,
         bus_no=bus_no,
-        driver_id=uuid.uuid4(),
+        driver_id="DRV-001",
         departure_time=timezone.now(),
         capacity=capacity,
     )
 
 
-def _make_booking(tenant_id, schedule, seat_no=1, status="booked", student_id=None):
+def _make_booking(tenant_id, schedule, seat_no=1, status="booked", student_user_code=None):
     return Booking.all_objects.create(
         tenant_id=tenant_id,
         schedule=schedule,
-        student_id=student_id or uuid.uuid4(),
+        student_user_code=student_user_code or "STU-100",
         seat_no=seat_no,
         status=status,
     )
@@ -109,7 +109,7 @@ def test_booking_default_status_is_booked():
     booking = Booking.all_objects.create(
         tenant_id=tenant_id,
         schedule=schedule,
-        student_id=uuid.uuid4(),
+        student_user_code="STU-100",
         seat_no=2,
     )
     assert booking.status == "booked"

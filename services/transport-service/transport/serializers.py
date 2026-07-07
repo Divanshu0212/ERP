@@ -54,7 +54,7 @@ class BookingRequestSerializer(serializers.Serializer):
     seat_no = serializers.IntegerField(min_value=1)
     idempotency_key = serializers.CharField(max_length=255, required=False, allow_blank=False)
     # Optional: falls back to the JWT ``sub`` claim when omitted.
-    student_id = serializers.UUIDField(required=False)
+    student_user_code = serializers.RegexField(r"^[A-Za-z0-9_-]{1,30}$", required=False)
 
 
 class BookingSerializer(serializers.ModelSerializer):
@@ -62,5 +62,5 @@ class BookingSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Booking
-        fields = ["id", "schedule_id", "student_id", "seat_no", "status", "created_at"]
+        fields = ["id", "schedule_id", "student_user_code", "seat_no", "status", "created_at"]
         read_only_fields = fields
