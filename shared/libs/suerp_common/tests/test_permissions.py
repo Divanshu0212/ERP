@@ -11,8 +11,11 @@ class _Req:
 
 
 class _Obj:
-    def __init__(self, owner_id):
-        self.owner_id = owner_id
+    def __init__(self, owner_id=None, user_code=None):
+        if owner_id is not None:
+            self.owner_id = owner_id
+        if user_code is not None:
+            self.user_code = user_code
 
 
 def _user(role="student", uid=None):
@@ -48,3 +51,14 @@ def test_object_owner_allows_owner_and_admin_denies_stranger():
 
     admin = _user(role="admin", uid=str(uuid.uuid4()))
     assert perm.has_object_permission(_Req(admin), view=None, obj=obj) is True
+
+
+def test_object_owner_allows_via_user_code_field():
+    perm = IsObjectOwner()
+    user_code = "STU-12345"
+    owner = _user(uid=user_code)
+    obj = _Obj(user_code=user_code)
+    assert perm.has_object_permission(_Req(owner), view=None, obj=obj) is True
+
+    stranger = _user(uid="STU-67890")
+    assert perm.has_object_permission(_Req(stranger), view=None, obj=obj) is False

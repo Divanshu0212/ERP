@@ -44,10 +44,10 @@ class IsObjectOwner(BasePermission):
     """Object-level: the acting user owns the object, or is privileged.
 
     Objects expose ownership via an ``owner_id`` attribute (or ``student_id`` /
-    ``user_id`` as fallbacks used across services).
+    ``user_id`` / ``user_code`` as fallbacks used across services).
     """
 
-    owner_fields = ("owner_id", "student_id", "user_id", "raised_by")
+    owner_fields = ("owner_id", "student_id", "user_id", "user_code", "raised_by")
 
     def has_object_permission(self, request, view, obj):
         user = getattr(request, "user", None)
