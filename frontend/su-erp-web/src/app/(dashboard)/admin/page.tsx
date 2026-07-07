@@ -99,6 +99,7 @@ function AdminContent() {
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<Role>("student");
   const [password, setPassword] = useState("");
+  const [userCode, setUserCode] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [formSuccess, setFormSuccess] = useState<string | null>(null);
@@ -151,10 +152,12 @@ function AdminContent() {
           email,
           role,
           password,
+          user_code: userCode,
         });
         setEmail("");
         setRole("student");
         setPassword("");
+        setUserCode("");
         setFormSuccess(`Created user ${created?.email ?? email}.`);
         await loadUsers();
       } catch (err) {
@@ -163,7 +166,7 @@ function AdminContent() {
         setSubmitting(false);
       }
     },
-    [email, role, password, loadUsers],
+    [email, role, password, userCode, loadUsers],
   );
 
   return (
@@ -250,6 +253,17 @@ function AdminContent() {
                   required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
+                />
+              </Field>
+            </div>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+              <Field label="User Code" htmlFor="new-user-code">
+                <Input
+                  id="new-user-code"
+                  required
+                  value={userCode}
+                  onChange={(e) => setUserCode(e.target.value)}
+                  placeholder="e.g. STU001"
                 />
               </Field>
             </div>
