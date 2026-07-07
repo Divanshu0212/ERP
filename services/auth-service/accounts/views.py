@@ -9,7 +9,7 @@ exactly what ``suerp_common.auth.JWTAuthentication`` reads; every other
 service treats this shape as its contract with auth-service.
 """
 
-from accounts.models import Institution, LoginAudit, User
+from accounts.models import Institution, LoginAudit, User, UserProfile
 from accounts.serializers import (
     AdminCreateUserSerializer,
     InstitutionCreateSerializer,
@@ -19,8 +19,9 @@ from accounts.serializers import (
     RefreshSerializer,
     RegisterSerializer,
     SuperadminCreateAdminSerializer,
-    UserByEmailSerializer,
+    UserByCodeSerializer,
     UserListSerializer,
+    UserProfileSerializer,
 )
 from django.conf import settings
 from django.contrib.auth import authenticate
@@ -42,12 +43,12 @@ LOCKOUT_WINDOW_MINUTES = 15
 def _issue_tokens(user: User) -> dict:
     """Mint a refresh+access token pair carrying sub/role/tenant claims."""
     refresh = RefreshToken.for_user(user)
-    refresh["sub"] = str(user.id)
+    refresh["sub"] = user.user_code
     refresh["role"] = user.role
     refresh["tenant"] = str(user.tenant_id)
 
     access = refresh.access_token
-    access["sub"] = str(user.id)
+    access["sub"] = user.user_code
     access["role"] = user.role
     access["tenant"] = str(user.tenant_id)
 
@@ -82,11 +83,11 @@ class RegisterView(APIView):
             publish_event(
                 "user.registered",
                 tenant_id=str(user.tenant_id),
-                payload={"user_id": str(user.id), "role": user.role},
+                payload={"user_code": user.user_code, "role": user.role},
             )
 
         return ok(
-            {"id": str(user.id), "email": user.email, "role": user.role},
+            {"user_code": user.user_code, "email": user.email, "role": user.role},
             message="Registered.",
             status=201,
         )
@@ -190,7 +191,7 @@ class MeView(APIView):
 
         serializer = MeSerializer(
             {
-                "id": user.id,
+                "user_code": user.user_code,
                 "email": user.email,
                 "role": user.role,
                 "tenant": str(user.tenant_id),
@@ -247,44 +248,106 @@ class UserAdminView(ListAPIView):
             publish_event(
                 "user.registered",
                 tenant_id=str(user.tenant_id),
-                payload={"user_id": str(user.id), "role": user.role},
+                payload={"user_code": user.user_code, "role": user.role},
             )
 
         return ok(
-            {"id": str(user.id), "email": user.email, "role": user.role},
+            {"user_code": user.user_code, "email": user.email, "role": user.role},
             message="User created.",
             status=201,
         )
 
 
-class UserByEmailView(APIView):
-    """GET /api/v1/auth/users/by-email/?email=... — resolve an email to its
-    User.id within the caller's own tenant.
+class UserByCodeView(APIView):
+    """GET /api/v1/auth/users/by-code/?user_code=... — resolve a user_code to
+    its User row within the caller's own tenant.
 
     This is the platform's single identity-resolution endpoint: every
-    student_id/warden_id elsewhere IS this User.id (see docs/superpowers/
-    specs/2026-07-04-allocation-email-bulk-import-design.md), so
+    student_user_code/warden_id elsewhere IS this user_code (see docs/
+    superpowers/specs/2026-07-07-user-code-profile-design.md), so
     hostel-service calls this endpoint (through the gateway, forwarding the
-    caller's own token) to turn a warden-typed email into the UUID its
-    Allocation/Block rows actually store.
+    caller's own token) to validate a warden/student-typed user_code before
+    storing it on its own Allocation/Block rows.
     """
 
     permission_classes = [role_required("warden", "admin")]
 
     def get(self, request):
-        email = request.query_params.get("email", "").strip()
-        if not email:
-            return fail("Query parameter 'email' is required.", status=400)
+        user_code = request.query_params.get("user_code", "").strip()
+        if not user_code:
+            return fail("Query parameter 'user_code' is required.", status=400)
 
-        email = User.objects.normalize_email(email)
         try:
-            user = User.objects.get(tenant_id=request.user.tenant_id, email__iexact=email)
+            user = User.objects.get(tenant_id=request.user.tenant_id, user_code=user_code)
         except User.DoesNotExist:
-            return fail(f"No user found with email {email}.", status=404)
+            return fail(f"No user found with user_code {user_code}.", status=404)
 
         return ok(
-            UserByEmailSerializer({"id": user.id, "email": user.email, "role": user.role}).data
+            UserByCodeSerializer(
+                {"user_code": user.user_code, "email": user.email, "role": user.role}
+            ).data
         )
+
+
+class MyProfileView(APIView):
+    """GET/PATCH /api/v1/auth/users/me/profile/ — the caller's own profile.
+
+    Superadmin has no UserProfile row (excluded by design) — always 403.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def _get_user(self, request):
+        try:
+            return User.objects.get(pk=request.user.id)
+        except User.DoesNotExist:
+            return None
+
+    def get(self, request):
+        user = self._get_user(request)
+        if user is None:
+            return fail("User no longer exists.", status=401)
+        if user.role == User.Role.SUPERADMIN:
+            return fail("Superadmin has no profile.", status=403)
+
+        profile, _ = UserProfile.objects.get_or_create(user=user)
+        return ok(UserProfileSerializer(profile).data)
+
+    def patch(self, request):
+        user = self._get_user(request)
+        if user is None:
+            return fail("User no longer exists.", status=401)
+        if user.role == User.Role.SUPERADMIN:
+            return fail("Superadmin has no profile.", status=403)
+
+        profile, _ = UserProfile.objects.get_or_create(user=user)
+        serializer = UserProfileSerializer(profile, data=request.data, partial=True)
+        if not serializer.is_valid():
+            return fail("Invalid profile payload.", errors=serializer.errors, status=400)
+
+        for field, value in serializer.validated_data.items():
+            setattr(profile, field, value)
+        profile.save()
+        return ok(UserProfileSerializer(profile).data, message="Profile updated.")
+
+
+class UserProfileView(APIView):
+    """GET /api/v1/auth/users/{user_code}/profile/ — admin/warden view of
+    another user's profile (read-only), within the caller's own tenant.
+    """
+
+    permission_classes = [role_required("warden", "admin")]
+
+    def get(self, request, user_code):
+        try:
+            user = User.objects.get(tenant_id=request.user.tenant_id, user_code=user_code)
+        except User.DoesNotExist:
+            return fail("User not found.", status=404)
+        if user.role == User.Role.SUPERADMIN:
+            return fail("Superadmin has no profile.", status=403)
+
+        profile, _ = UserProfile.objects.get_or_create(user=user)
+        return ok(UserProfileSerializer(profile).data)
 
 
 PLATFORM_SLUG = "platform"
@@ -343,12 +406,12 @@ class PlatformAdminView(APIView):
             publish_event(
                 "user.registered",
                 tenant_id=str(user.tenant_id),
-                payload={"user_id": str(user.id), "role": user.role},
+                payload={"user_code": user.user_code, "role": user.role},
             )
 
         return ok(
             {
-                "id": str(user.id),
+                "user_code": user.user_code,
                 "email": user.email,
                 "role": user.role,
                 "institution_slug": user.tenant.slug,

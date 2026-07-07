@@ -24,12 +24,18 @@ def client():
 
 
 def _register(
-    client, institution, email="student@example.com", password="s3cur3-passw0rd", role=None
+    client,
+    institution,
+    email="student@example.com",
+    password="s3cur3-passw0rd",
+    role=None,
+    user_code="STU-001",
 ):
     payload = {
         "institution_slug": institution.slug,
         "email": email,
         "password": password,
+        "user_code": user_code,
     }
     if role is not None:
         payload["role"] = role
@@ -49,7 +55,7 @@ def test_register_emits_exactly_one_unpublished_user_registered_event(client):
     event = events.first()
     assert event.published_at is None
     assert str(event.tenant_id) == str(inst.id)
-    assert event.payload["user_id"] == str(user.id)
+    assert event.payload["user_code"] == user.user_code
     assert event.payload["role"] == user.role
 
 

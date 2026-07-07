@@ -26,11 +26,21 @@ def client():
     return APIClient()
 
 
-def _register(client, institution, email, password="s3cur3-passw0rd", role=None):
+_user_code_counter = 0
+
+
+def _next_user_code():
+    global _user_code_counter
+    _user_code_counter += 1
+    return f"USR-{_user_code_counter:04d}"
+
+
+def _register(client, institution, email, password="s3cur3-passw0rd", role=None, user_code=None):
     payload = {
         "institution_slug": institution.slug,
         "email": email,
         "password": password,
+        "user_code": user_code or _next_user_code(),
     }
     if role is not None:
         payload["role"] = role
@@ -109,7 +119,7 @@ def test_list_users_as_admin_returns_only_same_tenant_users(client):
     emails = {u["email"] for u in results}
     assert emails == {"admin@example.com", "student@alpha.example.com"}
     for user in results:
-        assert set(user.keys()) == {"id", "email", "role", "is_active", "date_joined"}
+        assert set(user.keys()) == {"user_code", "email", "role", "is_active", "date_joined"}
 
 
 def test_list_users_forbidden_for_student(client):
@@ -136,7 +146,12 @@ def test_admin_creates_user_and_emits_one_event(client):
 
     resp = client.post(
         "/api/v1/auth/users",
-        {"email": "faculty@example.com", "role": User.Role.FACULTY, "password": "n3w-passw0rd"},
+        {
+            "email": "faculty@example.com",
+            "role": User.Role.FACULTY,
+            "password": "n3w-passw0rd",
+            "user_code": "FAC-001",
+        },
         format="json",
         HTTP_AUTHORIZATION=f"Bearer {admin_token}",
     )
@@ -147,10 +162,12 @@ def test_admin_creates_user_and_emits_one_event(client):
     assert data["role"] == User.Role.FACULTY
 
     user = User.objects.get(tenant=inst, email="faculty@example.com")
-    assert data["id"] == str(user.id)
+    assert data["user_code"] == user.user_code
     assert user.check_password("n3w-passw0rd") is True
 
-    events = OutboxEvent.objects.filter(type="user.registered", payload__user_id=str(user.id))
+    events = OutboxEvent.objects.filter(
+        type="user.registered", payload__user_code=user.user_code
+    )
     assert events.count() == 1
     assert events.first().payload["role"] == User.Role.FACULTY
 
@@ -166,6 +183,7 @@ def test_admin_created_user_belongs_to_admins_tenant_even_if_body_lies(client):
             "email": "mole@example.com",
             "role": User.Role.STUDENT,
             "password": "n3w-passw0rd",
+            "user_code": "MOLE-001",
             "tenant": str(inst_b.id),
             "tenant_id": str(inst_b.id),
             "institution_slug": inst_b.slug,

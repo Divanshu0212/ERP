@@ -25,12 +25,18 @@ def client():
 
 
 def _register(
-    client, institution, email="student@example.com", password="s3cur3-passw0rd", role=None
+    client,
+    institution,
+    email="student@example.com",
+    password="s3cur3-passw0rd",
+    role=None,
+    user_code="STU-001",
 ):
     payload = {
         "institution_slug": institution.slug,
         "email": email,
         "password": password,
+        "user_code": user_code,
     }
     if role is not None:
         payload["role"] = role
@@ -101,7 +107,7 @@ def test_login_returns_tokens_with_correct_claims(client):
     assert access and refresh
 
     claims = jwt.decode(access, settings.JWT_SIGNING_KEY, algorithms=["HS256"])
-    assert claims["sub"] == str(user.id)
+    assert claims["sub"] == user.user_code
     assert claims["role"] == user.role
     assert claims["tenant"] == str(inst.id)
 
@@ -201,8 +207,12 @@ def test_same_email_different_institutions_are_authenticated_independently(clien
     inst_a = _make_institution(slug="alpha", name="Alpha University")
     inst_b = _make_institution(slug="beta", name="Beta University")
 
-    _register(client, inst_a, password="passw0rd-alpha")
-    _register(client, inst_b, password="passw0rd-beta")
+    # user_code is a global (table-wide) primary key (see accounts/models.py
+    # module docstring), so the two registrations must use distinct codes
+    # even though they share an email across tenants (email is only unique
+    # per-tenant).
+    _register(client, inst_a, password="passw0rd-alpha", user_code="STU-ALPHA")
+    _register(client, inst_b, password="passw0rd-beta", user_code="STU-BETA")
 
     # Wrong-institution password fails.
     resp_wrong = _login(client, inst_b, password="passw0rd-alpha")
@@ -217,7 +227,7 @@ def test_same_email_different_institutions_are_authenticated_independently(clien
     assert claims_b["tenant"] == str(inst_b.id)
 
     user_b = User.objects.get(tenant=inst_b, email="student@example.com")
-    assert claims_b["sub"] == str(user_b.id)
+    assert claims_b["sub"] == user_b.user_code
 
 
 def test_refresh_endpoint_issues_new_access_token(client):
