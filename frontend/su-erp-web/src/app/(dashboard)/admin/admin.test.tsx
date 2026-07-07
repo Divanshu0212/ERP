@@ -44,6 +44,7 @@ function userList(extra: Record<string, unknown>[] = []) {
   const base = {
     id: "u1",
     email: "alice@acme.edu",
+    user_code: "STU001",
     role: "student",
     is_active: true,
     date_joined: "2024-05-01T00:00:00Z",
@@ -140,14 +141,14 @@ describe("AdminDashboard", () => {
     render(<AdminDashboard />);
     await screen.findByText("alice@acme.edu");
 
-    fireEvent.change(screen.getByLabelText("Student email"), { target: { value: "alice@acme.edu" } });
-    fireEvent.change(screen.getByLabelText("Amount"), { target: { value: "500" } });
-    fireEvent.change(screen.getByLabelText("Purpose"), { target: { value: "Hostel fee" } });
+    fireEvent.change(screen.getByLabelText("Student user code"), { target: { value: "STU001" } });
+    fireEvent.change(document.getElementById("inv-amount")!, { target: { value: "500" } });
+    fireEvent.change(document.getElementById("inv-purpose")!, { target: { value: "Hostel fee" } });
     fireEvent.click(screen.getByRole("button", { name: "Create invoice" }));
 
     await waitFor(() =>
       expect(post).toHaveBeenCalledWith("/api/v1/finance/invoices", {
-        student_id: "u1",
+        student_user_code: "STU001",
         amount: "500",
         purpose: "Hostel fee",
       }),
@@ -182,23 +183,23 @@ describe("AdminDashboard", () => {
     expect(await screen.findByText("101")).toBeInTheDocument();
   });
 
-  it("creates a block by warden email", async () => {
+  it("creates a block by warden user code", async () => {
     get.mockImplementation(defaultGet);
     post.mockResolvedValue({ id: "blk-2", name: "Block B", gender_type: "F", warden_id: "w2" });
 
     render(<AdminDashboard />);
     await screen.findAllByText("Block A");
 
-    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Block B" } });
+    fireEvent.change(document.getElementById("block-name")!, { target: { value: "Block B" } });
     fireEvent.change(screen.getByLabelText("Gender type"), { target: { value: "F" } });
-    fireEvent.change(screen.getByLabelText("Warden email"), { target: { value: "warden@acme.edu" } });
+    fireEvent.change(screen.getByLabelText("Warden user code"), { target: { value: "WARD002" } });
     fireEvent.click(screen.getByRole("button", { name: "Create block" }));
 
     await waitFor(() =>
       expect(post).toHaveBeenCalledWith("/api/v1/hostel/blocks", {
         name: "Block B",
         gender_type: "F",
-        warden_email: "warden@acme.edu",
+        warden_user_code: "WARD002",
       }),
     );
     expect(await screen.findByText("Block created.")).toBeInTheDocument();

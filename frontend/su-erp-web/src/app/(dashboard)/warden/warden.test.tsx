@@ -100,13 +100,13 @@ describe("WardenDashboard", () => {
     await screen.findByText("No pending allocations.");
 
     fireEvent.change(screen.getByLabelText("Room"), { target: { value: "rm-1" } });
-    fireEvent.change(screen.getByLabelText("Student email"), { target: { value: "student@example.com" } });
+    fireEvent.change(screen.getByLabelText("Student user code"), { target: { value: "STU042" } });
     fireEvent.click(screen.getByRole("button", { name: "Create allocation" }));
 
     await waitFor(() =>
       expect(post).toHaveBeenCalledWith("/api/v1/hostel/allocate", {
         room_id: "rm-1",
-        student_email: "student@example.com",
+        student_user_code: "STU042",
       }),
     );
     expect(await screen.findByText("Allocation created.")).toBeInTheDocument();
@@ -114,12 +114,12 @@ describe("WardenDashboard", () => {
 
   it("uploads a bulk allocation file and shows the summary", async () => {
     get.mockResolvedValue({ items: [], total: 0 });
-    upload.mockResolvedValue({ batch_id: "b1", total_rows: 3, success_count: 2, fail_count: 1 });
+    upload.mockResolvedValue({ batch_id: "b1", total_rows: 3, success_count: 2, fail_count: 1, skipped_count: 0 });
 
     render(<WardenDashboard />);
     await screen.findByText("No pending allocations.");
 
-    const file = new File(["room_id,student_email\n"], "import.csv", { type: "text/csv" });
+    const file = new File(["room_id,student_user_code\n"], "import.csv", { type: "text/csv" });
     const input = screen.getByLabelText("File") as HTMLInputElement;
     fireEvent.change(input, { target: { files: [file] } });
     fireEvent.click(screen.getByRole("button", { name: "Upload" }));
@@ -128,7 +128,7 @@ describe("WardenDashboard", () => {
       expect(upload).toHaveBeenCalledWith("/api/v1/hostel/allocate/bulk", file),
     );
     expect(
-      await screen.findByText(/2 succeeded, 1 failed out of 3/),
+      await screen.findByText(/2 succeeded, 1 failed,\s*0 skipped out of 3/),
     ).toBeInTheDocument();
   });
 
@@ -146,9 +146,9 @@ describe("WardenDashboard", () => {
             {
               row_number: 1,
               room_id_raw: "rm-9",
-              student_email_raw: "bad@example.com",
+              student_user_code_raw: "BADCODE",
               status: "failed",
-              error_message: "No user found with email bad@example.com.",
+              error_message: "No user found with user_code BADCODE.",
               allocation_id: null,
             },
           ],
@@ -178,7 +178,7 @@ describe("WardenDashboard", () => {
     fireEvent.click(screen.getByRole("button", { name: "View" }));
 
     expect(
-      await screen.findByText("No user found with email bad@example.com."),
+      await screen.findByText("No user found with user_code BADCODE."),
     ).toBeInTheDocument();
   });
 });

@@ -209,6 +209,7 @@ function CreateInstitution({ onCreated }: { onCreated: () => void }) {
 function CreateAdmin({ institutions }: { institutions: Institution[] }) {
   const [slug, setSlug] = useState("");
   const [email, setEmail] = useState("");
+  const [userCode, setUserCode] = useState("");
   const [password, setPassword] = useState("");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -223,10 +224,12 @@ function CreateAdmin({ institutions }: { institutions: Institution[] }) {
       await api.post("/api/v1/auth/admins", {
         institution_slug: slug,
         email,
+        user_code: userCode,
         password,
       });
       setOk(`Admin ${email} added.`);
       setEmail("");
+      setUserCode("");
       setPassword("");
     } catch (err) {
       setError(errMsg(err));
@@ -266,6 +269,14 @@ function CreateAdmin({ institutions }: { institutions: Institution[] }) {
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             placeholder="admin@riverside.edu"
+            required
+          />
+        </Field>
+        <Field label="User code" htmlFor="admin-user-code">
+          <Input
+            id="admin-user-code"
+            value={userCode}
+            onChange={(e) => setUserCode(e.target.value)}
             required
           />
         </Field>

@@ -207,7 +207,7 @@ function CreateAllocation({
   onCreated: () => void;
 }) {
   const [roomId, setRoomId] = useState("");
-  const [studentEmail, setStudentEmail] = useState("");
+  const [studentUserCode, setStudentUserCode] = useState("");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [ok, setOk] = useState<string | null>(null);
@@ -220,11 +220,11 @@ function CreateAllocation({
     try {
       await api.post("/api/v1/hostel/allocate", {
         room_id: roomId,
-        student_email: studentEmail,
+        student_user_code: studentUserCode,
       });
       setOk("Allocation created.");
       setRoomId("");
-      setStudentEmail("");
+      setStudentUserCode("");
       onCreated();
     } catch (err) {
       setError(errMsg(err));
@@ -257,12 +257,11 @@ function CreateAllocation({
                 ))}
               </Select>
             </Field>
-            <Field label="Student email" htmlFor="alloc-student">
+            <Field label="Student user code" htmlFor="alloc-student">
               <Input
                 id="alloc-student"
-                type="email"
-                value={studentEmail}
-                onChange={(e) => setStudentEmail(e.target.value)}
+                value={studentUserCode}
+                onChange={(e) => setStudentUserCode(e.target.value)}
                 required
               />
             </Field>
@@ -380,7 +379,7 @@ interface ImportBatch {
 interface ImportRow {
   row_number: number;
   room_id_raw: string;
-  student_email_raw: string;
+  student_user_code_raw: string;
   status: string;
   error_message: string;
   allocation_id: string | null;
@@ -468,7 +467,7 @@ function ImportLogs() {
               <HeaderRow>
                 <TH>Row</TH>
                 <TH>Room ID</TH>
-                <TH>Student email</TH>
+                <TH>Student user code</TH>
                 <TH>Status</TH>
                 <TH>Error</TH>
               </HeaderRow>
@@ -478,7 +477,7 @@ function ImportLogs() {
                 <Row key={r.row_number}>
                   <TD>{r.row_number}</TD>
                   <TD className="font-mono text-[12px]">{r.room_id_raw}</TD>
-                  <TD>{r.student_email_raw}</TD>
+                  <TD>{r.student_user_code_raw}</TD>
                   <TD>
                     <StatusPill status={r.status} />
                   </TD>
