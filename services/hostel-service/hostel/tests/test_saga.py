@@ -44,7 +44,7 @@ def _make_block(tenant_id):
         tenant_id=tenant_id,
         name="Block A",
         gender_type="M",
-        warden_id=uuid.uuid4(),
+        warden_id="WARD-1",
     )
 
 
@@ -59,11 +59,11 @@ def _make_room(tenant_id, capacity=2, occupied_count=1, room_no="101"):
     )
 
 
-def _make_allocation(tenant_id, room, student_id=None, status="pending", invoice_id=None):
+def _make_allocation(tenant_id, room, student_user_code=None, status="pending", invoice_id=None):
     return Allocation.all_objects.create(
         tenant_id=tenant_id,
         room=room,
-        student_id=student_id or uuid.uuid4(),
+        student_user_code=student_user_code or f"STU-{uuid.uuid4().hex[:8]}",
         status=status,
         invoice_id=invoice_id,
     )
@@ -110,10 +110,10 @@ def _payment_failed_event(tenant_id, invoice_id, student_id):
 
 def test_full_saga_happy_path_confirms_allocation_and_emits_event():
     tenant_id = uuid.uuid4()
-    student_id = uuid.uuid4()
+    student_id = f"STU-{uuid.uuid4().hex[:8]}"
     invoice_id = uuid.uuid4()
     room = _make_room(tenant_id, capacity=2, occupied_count=1)
-    allocation = _make_allocation(tenant_id, room, student_id=student_id, status="pending")
+    allocation = _make_allocation(tenant_id, room, student_user_code=student_id, status="pending")
 
     # Step 1: correlate — finance.invoice.created stamps invoice_id.
     created_event = _invoice_created_event(
@@ -137,7 +137,7 @@ def test_full_saga_happy_path_confirms_allocation_and_emits_event():
     assert str(emitted.tenant_id) == str(tenant_id)
     assert emitted.payload == {
         "allocation_id": str(allocation.id),
-        "student_id": str(student_id),
+        "student_user_code": student_id,
         "room_id": str(room.id),
     }
 
@@ -156,11 +156,11 @@ def test_handle_invoice_created_missing_allocation_does_not_crash():
 
 def test_payment_failed_releases_allocation_and_decrements_room():
     tenant_id = uuid.uuid4()
-    student_id = uuid.uuid4()
+    student_id = f"STU-{uuid.uuid4().hex[:8]}"
     invoice_id = uuid.uuid4()
     room = _make_room(tenant_id, capacity=2, occupied_count=1)
     allocation = _make_allocation(
-        tenant_id, room, student_id=student_id, status="pending", invoice_id=invoice_id
+        tenant_id, room, student_user_code=student_id, status="pending", invoice_id=invoice_id
     )
 
     event = _payment_failed_event(tenant_id, invoice_id=invoice_id, student_id=student_id)
@@ -174,11 +174,11 @@ def test_payment_failed_releases_allocation_and_decrements_room():
 
 def test_payment_success_is_idempotent_confirms_once_and_emits_one_event():
     tenant_id = uuid.uuid4()
-    student_id = uuid.uuid4()
+    student_id = f"STU-{uuid.uuid4().hex[:8]}"
     invoice_id = uuid.uuid4()
     room = _make_room(tenant_id, capacity=2, occupied_count=1)
     allocation = _make_allocation(
-        tenant_id, room, student_id=student_id, status="pending", invoice_id=invoice_id
+        tenant_id, room, student_user_code=student_id, status="pending", invoice_id=invoice_id
     )
 
     event = _payment_success_event(tenant_id, invoice_id=invoice_id, student_id=student_id)
@@ -198,10 +198,10 @@ def test_out_of_order_payment_success_before_invoice_created_reconciles():
     the PaymentOutcome flipped applied=True.
     """
     tenant_id = uuid.uuid4()
-    student_id = uuid.uuid4()
+    student_id = f"STU-{uuid.uuid4().hex[:8]}"
     invoice_id = uuid.uuid4()
     room = _make_room(tenant_id, capacity=2, occupied_count=1)
-    allocation = _make_allocation(tenant_id, room, student_id=student_id, status="pending")
+    allocation = _make_allocation(tenant_id, room, student_user_code=student_id, status="pending")
     # invoice_id NOT yet stamped (handle_invoice_created hasn't run).
 
     # Payment success arrives first.
@@ -236,10 +236,10 @@ def test_out_of_order_payment_failed_before_invoice_created_reconciles_release()
     room seat.
     """
     tenant_id = uuid.uuid4()
-    student_id = uuid.uuid4()
+    student_id = f"STU-{uuid.uuid4().hex[:8]}"
     invoice_id = uuid.uuid4()
     room = _make_room(tenant_id, capacity=2, occupied_count=1)
-    allocation = _make_allocation(tenant_id, room, student_id=student_id, status="pending")
+    allocation = _make_allocation(tenant_id, room, student_user_code=student_id, status="pending")
 
     failed_event = _payment_failed_event(tenant_id, invoice_id=invoice_id, student_id=student_id)
     handle_payment_failed(failed_event)
@@ -349,11 +349,11 @@ def test_timeout_never_releases_paid_but_uncorrelated_allocation():
     allocation. Once invoice.created lands it must reconcile to CONFIRMED.
     """
     tenant_id = uuid.uuid4()
-    student_id = uuid.uuid4()
+    student_id = f"STU-{uuid.uuid4().hex[:8]}"
     invoice_id = uuid.uuid4()
     room = _make_room(tenant_id, capacity=2, occupied_count=1)
     # Allocation stays PENDING with invoice_id NULL — invoice.created hasn't run.
-    allocation = _make_allocation(tenant_id, room, student_id=student_id, status="pending")
+    allocation = _make_allocation(tenant_id, room, student_user_code=student_id, status="pending")
     old_time = timezone.now() - PENDING_TIMEOUT - timedelta(minutes=1)
     Allocation.all_objects.filter(id=allocation.id).update(allocated_on=old_time)
 

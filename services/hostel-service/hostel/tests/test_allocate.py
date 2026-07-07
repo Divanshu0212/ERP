@@ -30,7 +30,7 @@ pytestmark = pytest.mark.django_db
 
 def _make_token(tenant_id, user_id=None, role="warden"):
     claims = {
-        "sub": str(user_id or uuid.uuid4()),
+        "sub": user_id or f"USR-{uuid.uuid4().hex[:8]}",
         "role": role,
         "tenant": str(tenant_id),
     }
@@ -49,7 +49,7 @@ def _make_block(tenant_id, gender_type="M"):
         tenant_id=tenant_id,
         name="Block A",
         gender_type=gender_type,
-        warden_id=uuid.uuid4(),
+        warden_id="WARD-1",
     )
 
 
@@ -64,13 +64,13 @@ def _make_room(tenant_id, capacity=2, occupied_count=0, room_no="101"):
     )
 
 
-@patch("hostel.views.resolve_user_by_email")
+@patch("hostel.views.resolve_user_by_code")
 def test_allocating_available_room_creates_pending_allocation_and_emits_event(mock_resolve):
     tenant_id = uuid.uuid4()
     room = _make_room(tenant_id, capacity=2, occupied_count=0)
-    student_id = uuid.uuid4()
+    student_user_code = "STU-100"
     mock_resolve.return_value = {
-        "id": str(student_id),
+        "user_code": student_user_code,
         "email": "student@example.com",
         "role": "student",
     }
@@ -78,7 +78,7 @@ def test_allocating_available_room_creates_pending_allocation_and_emits_event(mo
 
     response = client.post(
         "/api/v1/hostel/allocate",
-        {"room_id": str(room.id), "student_email": "student@example.com"},
+        {"room_id": str(room.id), "student_user_code": student_user_code},
         format="json",
     )
 
@@ -87,10 +87,10 @@ def test_allocating_available_room_creates_pending_allocation_and_emits_event(mo
     assert body["success"] is True
     assert body["data"]["status"] == "pending"
     assert body["data"]["room_id"] == str(room.id)
-    assert body["data"]["student_id"] == str(student_id)
+    assert body["data"]["student_user_code"] == student_user_code
     mock_resolve.assert_called_once()
 
-    allocations = Allocation.all_objects.filter(room=room, student_id=student_id)
+    allocations = Allocation.all_objects.filter(room=room, student_user_code=student_user_code)
     assert allocations.count() == 1
     allocation = allocations.first()
     assert allocation.status == "pending"
@@ -104,19 +104,19 @@ def test_allocating_available_room_creates_pending_allocation_and_emits_event(mo
     assert str(event.tenant_id) == str(tenant_id)
     assert event.payload == {
         "allocation_id": str(allocation.id),
-        "student_id": str(student_id),
+        "student_user_code": student_user_code,
         "room_id": str(room.id),
         "fee_structure_id": None,
         "university_name": "",
     }
 
 
-@patch("hostel.views.resolve_user_by_email")
+@patch("hostel.views.resolve_user_by_code")
 def test_allocating_full_room_returns_400_and_creates_nothing(mock_resolve):
     tenant_id = uuid.uuid4()
     room = _make_room(tenant_id, capacity=2, occupied_count=2)
     mock_resolve.return_value = {
-        "id": str(uuid.uuid4()),
+        "user_code": "STU-100",
         "email": "student@example.com",
         "role": "student",
     }
@@ -124,7 +124,7 @@ def test_allocating_full_room_returns_400_and_creates_nothing(mock_resolve):
 
     response = client.post(
         "/api/v1/hostel/allocate",
-        {"room_id": str(room.id), "student_email": "student@example.com"},
+        {"room_id": str(room.id), "student_user_code": "STU-100"},
         format="json",
     )
 
@@ -148,7 +148,7 @@ def test_student_role_cannot_allocate():
 
     response = client.post(
         "/api/v1/hostel/allocate",
-        {"room_id": str(room.id), "student_email": "student@example.com"},
+        {"room_id": str(room.id), "student_user_code": "STU-100"},
         format="json",
     )
 
@@ -157,13 +157,13 @@ def test_student_role_cannot_allocate():
     assert OutboxEvent.objects.count() == 0
 
 
-@patch("hostel.views.resolve_user_by_email")
+@patch("hostel.views.resolve_user_by_code")
 def test_warden_cannot_allocate_room_from_a_different_tenant(mock_resolve):
     tenant_a = uuid.uuid4()
     tenant_b = uuid.uuid4()
     room = _make_room(tenant_a, capacity=2, occupied_count=0)
     mock_resolve.return_value = {
-        "id": str(uuid.uuid4()),
+        "user_code": "STU-100",
         "email": "student@example.com",
         "role": "student",
     }
@@ -171,7 +171,7 @@ def test_warden_cannot_allocate_room_from_a_different_tenant(mock_resolve):
 
     response = client_b.post(
         "/api/v1/hostel/allocate",
-        {"room_id": str(room.id), "student_email": "student@example.com"},
+        {"room_id": str(room.id), "student_user_code": "STU-100"},
         format="json",
     )
 
@@ -202,18 +202,18 @@ def test_available_rooms_lists_only_rooms_with_capacity_tenant_scoped():
     assert returned_ids == {str(open_room.id)}
 
 
-@patch("hostel.views.resolve_user_by_email")
-def test_allocate_returns_400_when_email_not_found(mock_resolve):
+@patch("hostel.views.resolve_user_by_code")
+def test_allocate_returns_400_when_code_not_found(mock_resolve):
     from hostel.lookups import LookupFailed
 
     tenant_id = uuid.uuid4()
     room = _make_room(tenant_id, capacity=2, occupied_count=0)
-    mock_resolve.side_effect = LookupFailed("not_found", "No user found with email x@example.com.")
+    mock_resolve.side_effect = LookupFailed("not_found", "No user found with user_code STU-999.")
     client = _auth_client(tenant_id, role="warden")
 
     response = client.post(
         "/api/v1/hostel/allocate",
-        {"room_id": str(room.id), "student_email": "x@example.com"},
+        {"room_id": str(room.id), "student_user_code": "STU-999"},
         format="json",
     )
 
@@ -221,7 +221,7 @@ def test_allocate_returns_400_when_email_not_found(mock_resolve):
     assert Allocation.all_objects.filter(room=room).count() == 0
 
 
-@patch("hostel.views.resolve_user_by_email")
+@patch("hostel.views.resolve_user_by_code")
 def test_allocate_returns_502_when_lookup_service_unavailable(mock_resolve):
     from hostel.lookups import LookupFailed
 
@@ -232,7 +232,7 @@ def test_allocate_returns_502_when_lookup_service_unavailable(mock_resolve):
 
     response = client.post(
         "/api/v1/hostel/allocate",
-        {"room_id": str(room.id), "student_email": "x@example.com"},
+        {"room_id": str(room.id), "student_user_code": "STU-999"},
         format="json",
     )
 

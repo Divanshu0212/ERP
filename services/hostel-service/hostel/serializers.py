@@ -17,7 +17,7 @@ from rest_framework import serializers
 
 class AllocateRequestSerializer(serializers.Serializer):
     room_id = serializers.UUIDField()
-    student_email = serializers.EmailField()
+    student_user_code = serializers.RegexField(r"^[A-Za-z0-9_-]{1,30}$")
 
 
 class AllocationSerializer(serializers.ModelSerializer):
@@ -25,7 +25,7 @@ class AllocationSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Allocation
-        fields = ["id", "status", "room_id", "student_id", "allocated_on"]
+        fields = ["id", "status", "room_id", "student_user_code", "allocated_on"]
         read_only_fields = fields
 
 
@@ -57,7 +57,7 @@ class BlockSerializer(serializers.ModelSerializer):
 class BlockCreateSerializer(serializers.Serializer):
     name = serializers.CharField(max_length=255)
     gender_type = serializers.ChoiceField(choices=Block.GenderType.choices)
-    warden_email = serializers.EmailField()
+    warden_user_code = serializers.RegexField(r"^[A-Za-z0-9_-]{1,30}$")
 
 
 class RoomCreateSerializer(serializers.Serializer):
@@ -74,7 +74,7 @@ class AllocationImportRowSerializer(serializers.ModelSerializer):
         fields = [
             "row_number",
             "room_id_raw",
-            "student_email_raw",
+            "student_user_code_raw",
             "status",
             "error_message",
             "allocation_id",
@@ -119,7 +119,7 @@ class RoomRequestSerializer(serializers.ModelSerializer):
         model = RoomRequest
         fields = [
             "id",
-            "student_id",
+            "student_user_code",
             "room_id",
             "room_name",
             "status",

@@ -6,11 +6,12 @@ authority and has documented reasons to deviate from TenantModel). ``objects``
 is transparently scoped to the active tenant; ``all_objects`` bypasses scoping
 for system operations.
 
-``Block.warden_id``, ``Allocation.student_id``/``invoice_id``,
-``LeaveRequest.student_id``, and ``Complaint.student_id`` are bare UUIDs, not
-ForeignKeys: auth-service/student-service and finance-service own those rows
-in their own databases (DB-per-service), so hostel-service can only ever hold
-an opaque reference to them, never a real FK. ``Room.block`` and
+``Block.warden_id``, ``Allocation.student_user_code``/``invoice_id``,
+``LeaveRequest.student_user_code``, and ``Complaint.student_user_code`` are
+bare strings holding auth-service's ``user_code``, not ForeignKeys:
+auth-service/student-service and finance-service own those rows in their own
+databases (DB-per-service), so hostel-service can only ever hold an opaque
+reference to them, never a real FK. ``Room.block`` and
 ``Allocation.room``/``Complaint.room`` ARE real ForeignKeys since Block/Room
 live in this same database.
 """
@@ -29,9 +30,8 @@ class Block(TenantModel):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     name = models.CharField(max_length=255)
     gender_type = models.CharField(max_length=1, choices=GenderType.choices)
-    # Reference to auth-service's User table (the warden). No cross-service FK
-    # (DB-per-service) — this is a bare, opaque UUID.
-    warden_id = models.UUIDField()
+    # Reference to auth-service's User table (the warden), by user_code.
+    warden_id = models.CharField(max_length=30)
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
@@ -69,9 +69,8 @@ class Allocation(TenantModel):
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     room = models.ForeignKey(Room, on_delete=models.CASCADE, related_name="allocations")
-    # Reference to student-service's Student table. No cross-service FK
-    # (DB-per-service) — this is a bare, opaque UUID.
-    student_id = models.UUIDField()
+    # Reference to student-service's Student (auth-service's user_code).
+    student_user_code = models.CharField(max_length=30)
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING)
     allocated_on = models.DateTimeField(auto_now_add=True)
     vacated_on = models.DateField(null=True, blank=True)
@@ -84,7 +83,9 @@ class Allocation(TenantModel):
     class Meta:
         indexes = [
             models.Index(fields=["tenant_id", "status"], name="allocation_tenant_status"),
-            models.Index(fields=["tenant_id", "student_id"], name="allocation_tenant_student"),
+            models.Index(
+                fields=["tenant_id", "student_user_code"], name="allocation_tenant_student"
+            ),
         ]
 
     def __str__(self):
@@ -141,7 +142,7 @@ class LeaveRequest(TenantModel):
         REJECTED = "rejected", "Rejected"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    student_id = models.UUIDField()
+    student_user_code = models.CharField(max_length=30)
     from_date = models.DateField()
     to_date = models.DateField()
     reason = models.TextField()
@@ -166,14 +167,14 @@ class RoomRequest(TenantModel):
         REJECTED = "rejected", "Rejected"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    student_id = models.UUIDField()
+    student_user_code = models.CharField(max_length=30)
     room = models.ForeignKey(Room, on_delete=models.CASCADE, related_name="requests")
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING)
     requested_on = models.DateTimeField(auto_now_add=True)
     decided_on = models.DateTimeField(null=True, blank=True)
-    # Reference to auth-service's User table (the warden who approved/rejected).
-    # Bare UUID — no cross-service FK (DB-per-service).
-    decided_by = models.UUIDField(null=True, blank=True)
+    # Reference to auth-service's User table (the warden who approved/rejected),
+    # by user_code.
+    decided_by = models.CharField(max_length=30, null=True, blank=True)
     rejection_reason = models.CharField(max_length=500, blank=True, default="")
 
     class Meta:
@@ -184,7 +185,7 @@ class RoomRequest(TenantModel):
             # later re-request for the same room, but a duplicate PENDING one
             # (double-submit, replay) is rejected at the DB level.
             models.UniqueConstraint(
-                fields=["tenant_id", "student_id", "room"],
+                fields=["tenant_id", "student_user_code", "room"],
                 condition=models.Q(status="pending"),
                 name="roomrequest_one_pending_per_student_room",
             ),
@@ -201,7 +202,7 @@ class Complaint(TenantModel):
         RESOLVED = "resolved", "Resolved"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    student_id = models.UUIDField()
+    student_user_code = models.CharField(max_length=30)
     room = models.ForeignKey(
         Room, on_delete=models.SET_NULL, related_name="complaints", null=True, blank=True
     )
@@ -222,9 +223,9 @@ class AllocationImportBatch(TenantModel):
     """
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    # Reference to auth-service's User table (the warden/admin who uploaded).
-    # Bare UUID — no cross-service FK (DB-per-service).
-    uploaded_by = models.UUIDField()
+    # Reference to auth-service's User table (the warden/admin who uploaded),
+    # by user_code.
+    uploaded_by = models.CharField(max_length=30)
     filename = models.CharField(max_length=255)
     total_rows = models.PositiveIntegerField(default=0)
     success_count = models.PositiveIntegerField(default=0)
@@ -251,7 +252,7 @@ class AllocationImportRow(TenantModel):
     batch = models.ForeignKey(AllocationImportBatch, on_delete=models.CASCADE, related_name="rows")
     row_number = models.PositiveIntegerField()
     room_id_raw = models.CharField(max_length=255)
-    student_email_raw = models.CharField(max_length=255)
+    student_user_code_raw = models.CharField(max_length=255)
     status = models.CharField(max_length=20, choices=Status.choices)
     error_message = models.CharField(max_length=500, blank=True, default="")
     allocation = models.ForeignKey(

@@ -35,12 +35,12 @@ class RoomFullError(Exception):
 
 def create_allocation(
     room_id,
-    student_id,
+    student_user_code,
     tenant_id,
     fee_structure_id=None,
     university_name="",
 ) -> Allocation:
-    """Reserve a room seat and create a pending Allocation for student_id.
+    """Reserve a room seat and create a pending Allocation for student_user_code.
 
     Raises ``django.http.Http404`` if room_id doesn't resolve to a room in
     this tenant (via get_object_or_404, matching the pre-refactor
@@ -55,7 +55,7 @@ def create_allocation(
         allocation = Allocation.objects.create(
             tenant_id=tenant_id,
             room=room,
-            student_id=student_id,
+            student_user_code=student_user_code,
             status=Allocation.Status.PENDING,
         )
 
@@ -67,7 +67,7 @@ def create_allocation(
             tenant_id=tenant_id,
             payload={
                 "allocation_id": str(allocation.id),
-                "student_id": str(allocation.student_id),
+                "student_user_code": allocation.student_user_code,
                 "room_id": str(room.id),
                 "fee_structure_id": str(fee_structure_id) if fee_structure_id else None,
                 "university_name": university_name,

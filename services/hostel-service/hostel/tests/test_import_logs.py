@@ -13,7 +13,7 @@ from hostel.tests.test_allocate import _auth_client  # noqa: E402
 def _make_batch(tenant_id, filename="import.csv", total=2, success=1, fail=1):
     return AllocationImportBatch.all_objects.create(
         tenant_id=tenant_id,
-        uploaded_by=uuid.uuid4(),
+        uploaded_by="WARD-1",
         filename=filename,
         total_rows=total,
         success_count=success,
@@ -43,7 +43,7 @@ def test_detail_includes_rows():
         batch=batch,
         row_number=1,
         room_id_raw=str(uuid.uuid4()),
-        student_email_raw="a@example.com",
+        student_user_code_raw="STU-1",
         status=AllocationImportRow.Status.SUCCESS,
     )
     AllocationImportRow.all_objects.create(
@@ -51,7 +51,7 @@ def test_detail_includes_rows():
         batch=batch,
         row_number=2,
         room_id_raw="bad",
-        student_email_raw="b@example.com",
+        student_user_code_raw="STU-2",
         status=AllocationImportRow.Status.FAILED,
         error_message="Room not found.",
     )

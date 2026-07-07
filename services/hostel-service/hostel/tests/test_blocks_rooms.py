@@ -15,12 +15,12 @@ pytestmark = pytest.mark.django_db
 from hostel.tests.test_allocate import _auth_client, _make_block  # noqa: E402
 
 
-@patch("hostel.views.resolve_user_by_email")
+@patch("hostel.views.resolve_user_by_code")
 def test_admin_creates_block(mock_resolve):
     tenant_id = uuid.uuid4()
-    warden_id = uuid.uuid4()
+    warden_user_code = "WARD-1"
     mock_resolve.return_value = {
-        "id": str(warden_id),
+        "user_code": warden_user_code,
         "email": "warden@example.com",
         "role": "warden",
     }
@@ -28,14 +28,14 @@ def test_admin_creates_block(mock_resolve):
 
     response = client.post(
         "/api/v1/hostel/blocks",
-        {"name": "Block C", "gender_type": "F", "warden_email": "warden@example.com"},
+        {"name": "Block C", "gender_type": "F", "warden_user_code": warden_user_code},
         format="json",
     )
 
     assert response.status_code == 201, response.content
     data = response.json()["data"]
     assert data["name"] == "Block C"
-    assert data["warden_id"] == str(warden_id)
+    assert data["warden_id"] == warden_user_code
     assert Block.all_objects.filter(tenant_id=tenant_id, name="Block C").exists()
 
 
@@ -45,15 +45,15 @@ def test_warden_cannot_create_block():
 
     response = client.post(
         "/api/v1/hostel/blocks",
-        {"name": "Block C", "gender_type": "F", "warden_email": "warden@example.com"},
+        {"name": "Block C", "gender_type": "F", "warden_user_code": "WARD-1"},
         format="json",
     )
 
     assert response.status_code == 403
 
 
-@patch("hostel.views.resolve_user_by_email")
-def test_create_block_400_when_warden_email_not_found(mock_resolve):
+@patch("hostel.views.resolve_user_by_code")
+def test_create_block_400_when_warden_code_not_found(mock_resolve):
     from hostel.lookups import LookupFailed
 
     tenant_id = uuid.uuid4()
@@ -62,7 +62,7 @@ def test_create_block_400_when_warden_email_not_found(mock_resolve):
 
     response = client.post(
         "/api/v1/hostel/blocks",
-        {"name": "Block C", "gender_type": "F", "warden_email": "nobody@example.com"},
+        {"name": "Block C", "gender_type": "F", "warden_user_code": "WARD-999"},
         format="json",
     )
 
