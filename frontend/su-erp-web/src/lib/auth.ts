@@ -8,7 +8,8 @@
 
 const ACCESS_TOKEN_KEY = "access_token";
 
-/** JWT claims we rely on for routing. Extra claims are passed through. */
+/** JWT claims we rely on for routing. `sub` is the user's user_code (not a
+ * UUID) for every role except superadmin. Extra claims are passed through. */
 export interface TokenClaims {
   sub: string;
   role: string;

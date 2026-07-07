@@ -51,3 +51,18 @@ export async function login(
     redirectTo: dashboardPathForRole(claims.role),
   };
 }
+
+/** Shape returned by GET /api/v1/auth/me (inside the envelope). */
+export interface MeResponse {
+  user_code: string | null;
+  email: string;
+  role: string;
+  tenant: string;
+}
+
+/** Fetch the caller's own identity record (real email, user_code) — used to
+ * render the avatar/profile correctly instead of relying on the JWT `sub`
+ * claim, which is a user_code, not an email. */
+export async function fetchMe(): Promise<MeResponse> {
+  return api.get<MeResponse>("/api/v1/auth/me");
+}

@@ -42,3 +42,12 @@ export function initialsFromEmail(email: string): string {
   if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
   return (parts[0][0] + parts[1][0]).toUpperCase();
 }
+
+/** Two-letter initials from any freeform label (name, user_code, etc.),
+ * falling back to `initialsFromEmail` semantics when the label contains "@". */
+export function initialsFromLabel(label: string): string {
+  if (label.includes("@")) return initialsFromEmail(label);
+  const cleaned = (label || "").trim();
+  if (!cleaned) return "?";
+  return cleaned.slice(0, 2).toUpperCase();
+}
