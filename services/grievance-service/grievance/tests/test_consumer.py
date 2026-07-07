@@ -16,10 +16,14 @@ from suerp_common.events import build_event
 pytestmark = pytest.mark.django_db
 
 
+def _student_code():
+    return f"STU{uuid.uuid4().hex[:27]}"
+
+
 def _make_ticket(tenant_id, raised_by=None):
     return Ticket.all_objects.create(
         tenant_id=tenant_id,
-        raised_by=raised_by or uuid.uuid4(),
+        raised_by=raised_by or _student_code(),
         category="hostel",
         description="The warden is harassing me.",
     )
