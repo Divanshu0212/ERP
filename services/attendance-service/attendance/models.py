@@ -17,7 +17,7 @@ class AttendanceRecord(TenantModel):
         ABSENT = "absent", "Absent"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    student_user_code = models.CharField(max_length=50)
+    student_user_code = models.CharField(max_length=30)
     course_id = models.UUIDField()
     date = models.DateField()
     status = models.CharField(max_length=10, choices=Status.choices)
