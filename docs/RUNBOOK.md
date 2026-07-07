@@ -99,7 +99,8 @@ Provision an institution and its first admin in one command:
 docker compose -f infra/docker-compose.yml exec auth-service \
   python manage.py create_institution \
   --slug demo-univ --name "Demo University" \
-  --admin-email admin@demo.edu --admin-password 'Passw0rd!123'
+  --admin-email admin@demo.edu --admin-password 'Passw0rd!123' \
+  --admin-user-code ADM-DEMO-001
 ```
 
 Then that admin logs in at `/login` with institution `demo-univ` and manages

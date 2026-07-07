@@ -26,12 +26,14 @@ class Command(BaseCommand):
         parser.add_argument("--name", required=True, help="Institution display name.")
         parser.add_argument("--admin-email", required=True, help="First admin's email.")
         parser.add_argument("--admin-password", required=True, help="First admin's password.")
+        parser.add_argument("--admin-user-code", required=True, help="user_code for the institution's first admin")
 
     def handle(self, *args, **options):
         slug = options["slug"]
         name = options["name"]
         admin_email = User.objects.normalize_email(options["admin_email"])
         admin_password = options["admin_password"]
+        admin_user_code = options["admin_user_code"]
 
         with transaction.atomic():
             institution, created = Institution.objects.get_or_create(
@@ -48,7 +50,7 @@ class Command(BaseCommand):
             admin = User.objects.filter(tenant=institution, email=admin_email).first()
             if admin is not None:
                 self.stdout.write(
-                    f"Admin {admin_email} already exists in {slug} ({admin.id}); skipping user creation."
+                    f"Admin {admin_email} already exists in {slug} ({admin.user_code}); skipping user creation."
                 )
             else:
                 admin = User.objects.create_user(
@@ -56,7 +58,8 @@ class Command(BaseCommand):
                     email=admin_email,
                     password=admin_password,
                     role=User.Role.ADMIN,
+                    user_code=admin_user_code,
                 )
-                self.stdout.write(self.style.SUCCESS(f"Created admin {admin_email} ({admin.id})."))
+                self.stdout.write(self.style.SUCCESS(f"Created admin {admin_email} ({admin.user_code})."))
 
-        self.stdout.write(f"institution_id={institution.id} admin_id={admin.id}")
+        self.stdout.write(f"institution_id={institution.id} admin_id={admin.user_code}")
