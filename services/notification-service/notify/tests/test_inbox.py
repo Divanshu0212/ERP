@@ -38,10 +38,10 @@ def _auth_client(tenant_id, user_id, **kwargs):
     return client
 
 
-def _make_notification(tenant_id, user_id, title="t", body="b", read=False):
+def _make_notification(tenant_id, user_code, title="t", body="b", read=False):
     return Notification.all_objects.create(
         tenant_id=tenant_id,
-        user_id=user_id,
+        user_code=user_code,
         title=title,
         body=body,
         read=read,
@@ -50,8 +50,8 @@ def _make_notification(tenant_id, user_id, title="t", body="b", read=False):
 
 def test_inbox_returns_only_current_users_notifications_within_tenant():
     tenant_id = uuid.uuid4()
-    user_a = uuid.uuid4()
-    user_b = uuid.uuid4()
+    user_a = "STU-100"
+    user_b = "STU-200"
 
     _make_notification(tenant_id, user_a, title="for A #1")
     _make_notification(tenant_id, user_a, title="for A #2")
@@ -72,7 +72,7 @@ def test_inbox_returns_only_current_users_notifications_within_tenant():
 
 def test_inbox_orders_newest_first():
     tenant_id = uuid.uuid4()
-    user_a = uuid.uuid4()
+    user_a = "STU-100"
 
     _make_notification(tenant_id, user_a, title="older")
     _make_notification(tenant_id, user_a, title="newer")
@@ -87,7 +87,7 @@ def test_inbox_orders_newest_first():
 def test_inbox_is_tenant_scoped():
     tenant_a = uuid.uuid4()
     tenant_b = uuid.uuid4()
-    user_a = uuid.uuid4()
+    user_a = "STU-100"
 
     _make_notification(tenant_a, user_a, title="tenant A note")
 
@@ -108,8 +108,8 @@ def test_inbox_requires_authentication():
 
 def test_mark_read_marks_only_current_users_notification():
     tenant_id = uuid.uuid4()
-    user_a = uuid.uuid4()
-    user_b = uuid.uuid4()
+    user_a = "STU-100"
+    user_b = "STU-200"
 
     note_a = _make_notification(tenant_id, user_a, title="A")
     note_b = _make_notification(tenant_id, user_b, title="B")

@@ -29,7 +29,7 @@ class InboxListView(ListAPIView):
     serializer_class = NotificationSerializer
 
     def get_queryset(self):
-        return Notification.objects.filter(user_id=self.request.user.id).order_by("-created_at")
+        return Notification.objects.filter(user_code=self.request.user.id).order_by("-created_at")
 
 
 class MarkReadView(APIView):
@@ -41,7 +41,7 @@ class MarkReadView(APIView):
 
     def post(self, request, pk):
         notification = get_object_or_404(
-            Notification.objects.filter(user_id=request.user.id), id=pk
+            Notification.objects.filter(user_code=request.user.id), id=pk
         )
         if not notification.read:
             notification.read = True
