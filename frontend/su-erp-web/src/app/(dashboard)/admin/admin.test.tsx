@@ -118,6 +118,7 @@ describe("AdminDashboard", () => {
     fireEvent.change(screen.getByLabelText("Email"), { target: { value: "bob@acme.edu" } });
     fireEvent.change(screen.getByLabelText("Role"), { target: { value: "faculty" } });
     fireEvent.change(screen.getByLabelText("Password"), { target: { value: "s3cretpass" } });
+    fireEvent.change(screen.getByLabelText("User Code"), { target: { value: "FAC001" } });
     fireEvent.click(screen.getByRole("button", { name: "Add User" }));
 
     // Posted with the form payload.
@@ -126,6 +127,7 @@ describe("AdminDashboard", () => {
         email: "bob@acme.edu",
         role: "faculty",
         password: "s3cretpass",
+        user_code: "FAC001",
       }),
     );
 
@@ -165,6 +167,7 @@ describe("AdminDashboard", () => {
 
     fireEvent.change(screen.getByLabelText("Email"), { target: { value: "alice@acme.edu" } });
     fireEvent.change(screen.getByLabelText("Password"), { target: { value: "s3cretpass" } });
+    fireEvent.change(screen.getByLabelText("User Code"), { target: { value: "ALICE-001" } });
     fireEvent.click(screen.getByRole("button", { name: "Add User" }));
 
     expect(
