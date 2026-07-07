@@ -1,5 +1,5 @@
 import { cn } from "@/lib/cn";
-import { initialsFromName, initialsFromEmail, tenantColor } from "./tenant-color";
+import { initialsFromName, initialsFromLabel, tenantColor } from "./tenant-color";
 
 const SIZES = {
   sm: "h-7 w-7 text-[11px]",
@@ -42,20 +42,33 @@ export function Monogram({
 }
 
 /**
- * User avatar: a circular chip with initials from an email address. Uses the
- * same deterministic color logic keyed on the email so a person keeps a stable
- * color.
+ * User avatar: shows the profile photo if `photoUrl` is set, else a circular
+ * chip with initials derived from `label` (typically the user's real email;
+ * falls back gracefully for any other label shape). Uses the same
+ * deterministic color logic keyed on `label` so a person keeps a stable color.
  */
 export function Avatar({
-  email,
+  label,
+  photoUrl,
   size = "md",
   className,
 }: {
-  email: string;
+  label: string;
+  photoUrl?: string;
   size?: Size;
   className?: string;
 }) {
-  const { bg, fg } = tenantColor(email);
+  const { bg, fg } = tenantColor(label);
+  if (photoUrl) {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img
+        src={photoUrl}
+        alt=""
+        className={cn("inline-block rounded-full object-cover", SIZES[size], className)}
+      />
+    );
+  }
   return (
     <span
       aria-hidden
@@ -66,7 +79,7 @@ export function Avatar({
         className,
       )}
     >
-      {initialsFromEmail(email)}
+      {initialsFromLabel(label)}
     </span>
   );
 }

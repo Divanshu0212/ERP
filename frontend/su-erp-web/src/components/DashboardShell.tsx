@@ -19,6 +19,8 @@ import type { LucideIcon } from "lucide-react";
 import { api } from "@/lib/api";
 import { clearToken } from "@/lib/auth";
 import type { TokenClaims } from "@/lib/auth";
+import { fetchMe } from "@/lib/session";
+import type { MeResponse } from "@/lib/session";
 import { useAuthGuard } from "@/lib/useAuthGuard";
 import { cn } from "@/lib/cn";
 import { Avatar, Monogram } from "@/components/ui/Monogram";
@@ -72,6 +74,7 @@ export function DashboardShell({
   const router = useRouter();
   const pathname = usePathname();
   const [institution, setInstitution] = useState<Institution | null>(null);
+  const [me, setMe] = useState<MeResponse | null>(null);
   const [navOpen, setNavOpen] = useState(false);
 
   useEffect(() => {
@@ -84,6 +87,13 @@ export function DashboardShell({
       })
       .catch(() => {
         // Non-fatal: the topbar falls back to a generic label.
+      });
+    fetchMe()
+      .then((data) => {
+        if (!cancelled) setMe(data);
+      })
+      .catch(() => {
+        // Non-fatal: the avatar falls back to the user_code label.
       });
     return () => {
       cancelled = true;
@@ -104,7 +114,7 @@ export function DashboardShell({
   const items = NAV[role] ?? [];
   const instName = institution?.name ?? "Institution";
   const instKey = claims?.tenant ?? institution?.id ?? instName;
-  const userEmail = claims?.sub ?? "user";
+  const avatarLabel = me?.email ?? claims?.sub ?? "user";
 
   function logout() {
     clearToken();
@@ -204,7 +214,7 @@ export function DashboardShell({
           </div>
           <div className="flex items-center gap-3">
             <span className="hidden text-[13px] capitalize text-muted sm:inline">{role}</span>
-            <Avatar email={userEmail} size="sm" />
+            <Avatar label={avatarLabel} size="sm" />
           </div>
         </header>
 
