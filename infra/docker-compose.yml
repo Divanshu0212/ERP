@@ -354,35 +354,38 @@ services:
     container_name: auth-celery
     build: *auth-build
     environment: *auth-env
-    command: celery -A config worker -B -l info --concurrency=1
+    # -Q pins this worker to its own queue — every service shares one Redis
+    # broker, so without per-service queues a worker can pop and silently
+    # discard another service's task ("Received unregistered task").
+    command: celery -A config worker -B -l info --concurrency=1 -Q auth
 
   finance-celery:
     <<: *django-svc
     container_name: finance-celery
     build: *finance-build
     environment: *finance-env
-    command: celery -A config worker -B -l info --concurrency=1
+    command: celery -A config worker -B -l info --concurrency=1 -Q finance
 
   grievance-celery:
     <<: *django-svc
     container_name: grievance-celery
     build: *grievance-build
     environment: *grievance-env
-    command: celery -A config worker -B -l info --concurrency=1
+    command: celery -A config worker -B -l info --concurrency=1 -Q grievance
 
   hostel-celery:
     <<: *django-svc
     container_name: hostel-celery
     build: *hostel-build
     environment: *hostel-env
-    command: celery -A config worker -B -l info --concurrency=1
+    command: celery -A config worker -B -l info --concurrency=1 -Q hostel
 
   notification-celery:
     <<: *django-svc
     container_name: notification-celery
     build: *notification-build
     environment: *notification-env
-    command: celery -A config worker -B -l info --concurrency=1
+    command: celery -A config worker -B -l info --concurrency=1 -Q notification
 
   transport-celery:
     <<: *django-svc
@@ -390,7 +393,7 @@ services:
     profiles: ["full"]
     build: *transport-build
     environment: *transport-env
-    command: celery -A config worker -B -l info --concurrency=1
+    command: celery -A config worker -B -l info --concurrency=1 -Q transport
 
   # =========================================================================
   # Event consumers (manage.py consume_events) — process inbound domain events.

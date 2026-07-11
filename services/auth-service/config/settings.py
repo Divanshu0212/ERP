@@ -203,6 +203,14 @@ CELERY_ACCEPT_CONTENT = ["json"]
 CELERY_TASK_SERIALIZER = "json"
 CELERY_RESULT_SERIALIZER = "json"
 CELERY_TIMEZONE = TIME_ZONE
+# Every service's worker shares the same Redis broker (see REDIS_URL above) —
+# without a per-service queue, celery's default "celery" queue collides
+# across all services and a worker can pop a task it doesn't recognize
+# ("Received unregistered task"), silently discarding it. Pinning each
+# service to its own named queue (matched by the "-Q auth" flag on this
+# service's celery command in infra/docker-compose.yml) keeps every worker
+# only ever consuming its own tasks.
+CELERY_TASK_DEFAULT_QUEUE = "auth"
 
 # Drains the transactional outbox (suerp_common.outbox.drain_outbox) every ~5
 # seconds so events committed by any view/task get relayed to RabbitMQ with
