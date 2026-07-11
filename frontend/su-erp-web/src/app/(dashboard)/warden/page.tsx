@@ -17,8 +17,9 @@ import { Table, TBody, TD, TH, THead, HeaderRow, Row } from "@/components/ui/Tab
 
 interface Allocation {
   id: string;
-  student_id: string;
-  room: string;
+  student_user_code: string;
+  room_id: string;
+  room_name: string;
   status: string;
 }
 
@@ -152,8 +153,8 @@ function WardenContent() {
           <TBody>
             {allocations.map((a) => (
               <Row key={a.id}>
-                <TD className="font-mono text-[12px]">{a.student_id}</TD>
-                <TD className="font-medium">{a.room}</TD>
+                <TD className="font-mono text-[12px]">{a.student_user_code}</TD>
+                <TD className="font-medium">{a.room_name}</TD>
                 <TD>
                   <StatusPill status={a.status} />
                 </TD>
