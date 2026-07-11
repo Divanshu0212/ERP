@@ -20,6 +20,7 @@ rooms, pay fees, raise grievances, and track their records — all through one w
 - [Running the tests](#running-the-tests)
 - [Demo 1 — the hostel saga](#demo-1--the-hostel-saga-hostel--finance--notification)
 - [Demo 2 — the ML grievance escalation](#demo-2--the-ml-grievance-escalation-grievance--ai--notification)
+- [Screenshots](#screenshots)
 - [Multi-tenancy](#multi-tenancy)
 - [Zero-trust identity](#zero-trust-identity)
 - [Event model](#event-model)
@@ -306,6 +307,67 @@ curl -sX POST localhost:8080/api/v1/ai/sentiment \
   -d '{"text":"the water has been off for three days"}'
 # → {"sentiment": <float -1..1>, "urgency": "medium"}
 ```
+
+---
+
+## Screenshots
+
+Captured live against a seeded institution — **PDPM IIITDMJ** (`pdpmiiitdmj`), provisioned
+end-to-end through the superadmin console with Indian-named staff and students, real hostel
+blocks/rooms, a fee structure, room requests, approvals, payments, and a verified receipt.
+
+### Superadmin — institution provisioning
+
+![Superadmin console](docs/screenshots/superadmin-dashboard.png)
+
+Cross-tenant: creates institutions and their first admin. PDPM IIITDMJ shown in the list,
+provisioned by this exact flow.
+
+### Admin — users, fee structures, hostel setup
+
+![Admin dashboard](docs/screenshots/admin-dashboard.png)
+
+Roster of every seeded user (admin, warden, faculty, driver, canteen owner, 10 students),
+the fee-structure CRUD form, hostel blocks (Kabir Bhawan, Meera Bhawan) and their rooms.
+
+### Warden — approval queue and bulk allocation
+
+![Warden dashboard](docs/screenshots/warden-dashboard.png)
+
+Pending room requests with a fee picker (Approve/Reject), and the confirmed/pending
+allocations feeding in from the saga.
+
+![Warden bulk upload](docs/screenshots/warden-bulk-upload.png)
+
+A real bulk-CSV import: 6 succeeded, 0 failed, **1 skipped** (blank `student_user_code`
+row correctly logged as skipped rather than a failure).
+
+### Student — request, pay, download receipt
+
+![Student dashboard](docs/screenshots/student-dashboard.png)
+
+Room request submitted and approved, invoices (one pending, two paid with a **Download
+receipt** action), and real notifications from the saga (`Payment successful`,
+`Hostel room confirmed`).
+
+![Student fees panel](docs/screenshots/student-fees-receipts.png)
+
+### Receipt verification
+
+![Receipt verification](docs/screenshots/verify-receipt.png)
+
+The QR on a downloaded PDF receipt links here — warden/admin-only, HMAC-verified,
+tamper-evident. Shown mid-flow: a real receipt for Aarav Singh's hostel payment,
+scanned and confirmed valid.
+
+### Other roles
+
+| Faculty | Driver | Canteen owner |
+| --- | --- | --- |
+| ![Faculty](docs/screenshots/faculty-dashboard.png) | ![Driver](docs/screenshots/driver-dashboard.png) | ![Canteen owner](docs/screenshots/canteen-owner-dashboard.png) |
+
+Faculty/exam endpoints 404 here — those are prototype/stub services (see
+[`docs/REMAINING_MODULES.md`](docs/REMAINING_MODULES.md) for what's fully built vs. stubbed).
 
 ---
 
