@@ -22,11 +22,15 @@ class AllocateRequestSerializer(serializers.Serializer):
 
 class AllocationSerializer(serializers.ModelSerializer):
     room_id = serializers.UUIDField(source="room.id", read_only=True)
+    room_name = serializers.SerializerMethodField()
 
     class Meta:
         model = Allocation
-        fields = ["id", "status", "room_id", "student_user_code", "allocated_on"]
+        fields = ["id", "status", "room_id", "room_name", "student_user_code", "allocated_on"]
         read_only_fields = fields
+
+    def get_room_name(self, obj):
+        return f"{obj.room.block.name} - {obj.room.room_no}"
 
 
 class RoomSerializer(serializers.ModelSerializer):

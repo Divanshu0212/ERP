@@ -174,7 +174,11 @@ class AllocationListView(ListAPIView):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        return Allocation.objects.all().order_by("-created_at")
+        qs = Allocation.objects.select_related("room", "room__block").order_by("-created_at")
+        status = self.request.query_params.get("status")
+        if status:
+            qs = qs.filter(status=status)
+        return qs
 
 
 class RoomRequestListCreateView(APIView):
