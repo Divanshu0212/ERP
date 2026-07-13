@@ -12,6 +12,7 @@ service treats this shape as its contract with auth-service.
 from accounts.models import Institution, LoginAudit, User, UserProfile
 from accounts.serializers import (
     AdminCreateUserSerializer,
+    BulkCreateStudentRowSerializer,
     InstitutionCreateSerializer,
     InstitutionSerializer,
     LoginSerializer,
@@ -256,6 +257,90 @@ class UserAdminView(ListAPIView):
             message="User created.",
             status=201,
         )
+
+
+class UserBulkCreateView(APIView):
+    """POST /api/v1/auth/users/bulk/ — admin bulk-creates students.
+
+    Every row becomes role=student (no per-row role field — this endpoint is
+    student-only by design). Each row is validated and saved in its OWN
+    transaction.atomic(), so one bad row (duplicate email/user_code, either
+    against the DB or against an earlier row in this same upload) does not
+    abort the rest of the batch — matches the partial-failure contract used
+    by hostel-service's bulk allocation import.
+
+    department/batch/semester ride along in the user.registered payload
+    purely for student-service's consumer to pick up (see
+    students/consumers.py) — auth-service does not otherwise use them.
+    """
+
+    permission_classes = [role_required("admin")]
+
+    def post(self, request):
+        rows = request.data.get("rows")
+        if not isinstance(rows, list) or len(rows) == 0:
+            return fail("Request must include a non-empty 'rows' list.", status=400)
+
+        try:
+            institution = Institution.objects.get(pk=request.user.tenant_id)
+        except Institution.DoesNotExist:
+            return fail("Institution no longer exists.", status=404)
+
+        created = []
+        failed = []
+        seen_emails: set[str] = set()
+        seen_user_codes: set[str] = set()
+
+        for index, row in enumerate(rows):
+            serializer = BulkCreateStudentRowSerializer(
+                data=row,
+                context={
+                    "institution": institution,
+                    "seen_emails": seen_emails,
+                    "seen_user_codes": seen_user_codes,
+                },
+            )
+            if not serializer.is_valid():
+                failed.append({
+                    "row": index,
+                    "email": row.get("email", "") if isinstance(row, dict) else "",
+                    "error": _first_error_message(serializer.errors),
+                })
+                continue
+
+            with transaction.atomic():
+                user = serializer.save()
+                publish_event(
+                    "user.registered",
+                    tenant_id=str(user.tenant_id),
+                    payload={
+                        "user_code": user.user_code,
+                        "role": user.role,
+                        "department": serializer.validated_data["department"],
+                        "batch": serializer.validated_data["batch"],
+                        "semester": serializer.validated_data["semester"],
+                    },
+                )
+            seen_emails.add(user.email)
+            seen_user_codes.add(user.user_code)
+            created.append({"row": index, "email": user.email, "user_code": user.user_code})
+
+        return ok(
+            {"created": created, "failed": failed},
+            message=f"{len(created)} student(s) created, {len(failed)} failed.",
+            status=201,
+        )
+
+
+def _first_error_message(errors: dict) -> str:
+    """Flatten a DRF errors dict down to one human-readable string for a
+    bulk-row failure entry (the UI shows one error string per failed row,
+    not a nested field-by-field structure)."""
+    for value in errors.values():
+        if isinstance(value, list) and value:
+            return str(value[0])
+        return str(value)
+    return "Invalid row."
 
 
 class UserByCodeView(APIView):

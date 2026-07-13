@@ -263,10 +263,10 @@ services:
     <<: *django-svc
     container_name: student-service
     profiles: ["full"]
-    build:
+    build: &student-build
       context: ..
       dockerfile: services/student-service/Dockerfile
-    environment:
+    environment: &student-env
       <<: *django-env
       DATABASE_URL: postgres://suerp:suerp@pgbouncer:6432/student
     command: *web-command
@@ -425,6 +425,14 @@ services:
     container_name: notification-consumer
     build: *notification-build
     environment: *notification-env
+    command: python manage.py consume_events
+
+  student-consumer:
+    <<: *django-svc
+    container_name: student-consumer
+    profiles: ["full"]
+    build: *student-build
+    environment: *student-env
     command: python manage.py consume_events
 
   transport-consumer:
