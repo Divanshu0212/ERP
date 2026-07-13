@@ -24,5 +24,8 @@ class StudentProfile(TenantModel):
     cgpa = models.FloatField(default=0)
     created_at = models.DateTimeField(auto_now_add=True)
 
+    class Meta:
+        unique_together = [("tenant_id", "user_code")]
+
     def __str__(self):
         return f"{self.user_code} ({self.department})"
