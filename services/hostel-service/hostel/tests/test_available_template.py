@@ -15,9 +15,10 @@ from hostel.models import Room  # noqa: E402
 from hostel.tests.test_allocate import _auth_client, _make_block, _make_room  # noqa: E402
 
 
-def test_returns_only_available_rooms_as_csv():
+def test_returns_one_row_per_free_seat():
     tenant_id = uuid.uuid4()
     available = _make_room(tenant_id, capacity=2, occupied_count=0, room_no="101")
+    partially_full = _make_room(tenant_id, capacity=3, occupied_count=2, room_no="103")
     full = _make_room(tenant_id, capacity=1, occupied_count=1, room_no="102")
     client = _auth_client(tenant_id, role="warden")
 
@@ -31,10 +32,16 @@ def test_returns_only_available_rooms_as_csv():
     reader = csv.DictReader(io.StringIO(content))
     assert reader.fieldnames == ["room_id", "room_name", "student_user_code"]
     rows = list(reader)
-    assert len(rows) == 1
-    assert rows[0]["room_id"] == str(available.id)
-    assert rows[0]["room_name"] == f"{available.block.name} - {available.room_no}"
-    assert rows[0]["student_user_code"] == ""
+
+    available_rows = [r for r in rows if r["room_id"] == str(available.id)]
+    assert len(available_rows) == 2
+    for row in available_rows:
+        assert row["room_name"] == f"{available.block.name} - {available.room_no}"
+        assert row["student_user_code"] == ""
+
+    partial_rows = [r for r in rows if r["room_id"] == str(partially_full.id)]
+    assert len(partial_rows) == 1
+
     assert str(full.id) not in content
 
 
@@ -44,10 +51,10 @@ def test_ordered_by_block_then_room_no():
     block_a.name = "Block A"
     block_a.save(update_fields=["name"])
     room_b2 = Room.all_objects.create(
-        tenant_id=tenant_id, block=block_a, room_no="B2", capacity=2, occupied_count=0
+        tenant_id=tenant_id, block=block_a, room_no="B2", capacity=1, occupied_count=0
     )
     room_a1 = Room.all_objects.create(
-        tenant_id=tenant_id, block=block_a, room_no="A1", capacity=2, occupied_count=0
+        tenant_id=tenant_id, block=block_a, room_no="A1", capacity=1, occupied_count=0
     )
     client = _auth_client(tenant_id, role="warden")
 

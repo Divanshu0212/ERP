@@ -42,6 +42,7 @@ from hostel.serializers import (
     AllocationSerializer,
     BlockCreateSerializer,
     BlockSerializer,
+    RoomCapacityUpdateSerializer,
     RoomCreateSerializer,
     RoomRequestApproveSerializer,
     RoomRequestCreateSerializer,
@@ -55,6 +56,7 @@ from rest_framework.parsers import MultiPartParser
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.views import APIView
 from suerp_common.envelope import fail, ok
+from suerp_common.outbox import publish_event
 from suerp_common.permissions import role_required
 from suerp_common.tenancy import get_current_tenant
 
@@ -97,7 +99,10 @@ class AvailableRoomsTemplateView(APIView):
         writer = csv.writer(buffer)
         writer.writerow(["room_id", "room_name", "student_user_code"])
         for room in rooms:
-            writer.writerow([str(room.id), f"{room.block.name} - {room.room_no}", ""])
+            free_seats = room.capacity - room.occupied_count
+            room_name = f"{room.block.name} - {room.room_no}"
+            for _ in range(free_seats):
+                writer.writerow([str(room.id), room_name, ""])
 
         response = HttpResponse(buffer.getvalue(), content_type="text/csv")
         response["Content-Disposition"] = 'attachment; filename="allocation-template.csv"'
@@ -167,6 +172,34 @@ class RoomListCreateView(ListCreateAPIView):
         return ok(RoomSerializer(room).data, message="Room created.", status=201)
 
 
+class RoomDetailView(APIView):
+    """PATCH /api/v1/hostel/rooms/<id> — admin edits room capacity.
+
+    Increasing is always allowed. Decreasing below the room's current
+    occupied_count is rejected — a room can never show fewer seats than
+    students already living in it.
+    """
+
+    permission_classes = [role_required("admin")]
+
+    def patch(self, request, pk):
+        serializer = RoomCapacityUpdateSerializer(data=request.data)
+        if not serializer.is_valid():
+            return fail("Invalid capacity payload.", errors=serializer.errors, status=400)
+
+        room = get_object_or_404(Room.objects.all(), id=pk)
+        new_capacity = serializer.validated_data["capacity"]
+        if new_capacity < room.occupied_count:
+            return fail(
+                f"Capacity cannot be lower than current occupancy ({room.occupied_count}).",
+                status=400,
+            )
+
+        room.capacity = new_capacity
+        room.save(update_fields=["capacity"])
+        return ok(RoomSerializer(room).data, message="Room capacity updated.")
+
+
 class AllocationListView(ListAPIView):
     """GET /api/v1/hostel/allocations — tenant-scoped, paginated."""
 
@@ -179,6 +212,41 @@ class AllocationListView(ListAPIView):
         if status:
             qs = qs.filter(status=status)
         return qs
+
+
+class ReleaseAllocationView(APIView):
+    """POST /api/v1/hostel/allocations/<id>/release — warden manually releases
+    an allocation. Same accounting as the automated payment-saga release path
+    in hostel/consumers.py (_apply_outcome's FAILED branch): frees the room
+    seat under a row lock and emits the same hostel.allocation.released event,
+    just triggered directly instead of by a payment-failed/timeout event.
+    """
+
+    permission_classes = [role_required("warden", "admin")]
+
+    def post(self, request, pk):
+        allocation = get_object_or_404(Allocation.objects.all(), id=pk)
+        if allocation.status == Allocation.Status.RELEASED:
+            return fail("Allocation is already released.", status=400)
+
+        tenant_id = allocation.tenant_id
+        with transaction.atomic():
+            room = Room.objects.select_for_update().get(pk=allocation.room_id)
+            allocation.status = Allocation.Status.RELEASED
+            allocation.save(update_fields=["status"])
+            room.occupied_count = max(0, room.occupied_count - 1)
+            room.save(update_fields=["occupied_count"])
+            publish_event(
+                "hostel.allocation.released",
+                tenant_id=tenant_id,
+                payload={
+                    "allocation_id": str(allocation.id),
+                    "student_user_code": allocation.student_user_code,
+                    "room_id": str(allocation.room_id),
+                },
+            )
+
+        return ok(AllocationSerializer(allocation).data, message="Allocation released.")
 
 
 class RoomRequestListCreateView(APIView):
