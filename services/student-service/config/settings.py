@@ -28,6 +28,10 @@ ALLOWED_HOSTS = env.list("ALLOWED_HOSTS", default=["*"])
 # key. See suerp_common.auth.JWTAuthentication.
 JWT_SIGNING_KEY = env("JWT_SIGNING_KEY", default="dev-insecure-change-me")
 
+# Read by suerp_common.events via settings.RABBITMQ_URL (student-consumer's
+# manage.py consume_events).
+RABBITMQ_URL = env("RABBITMQ_URL", default="amqp://guest:guest@rabbitmq:5672/")
+
 # --- Applications -----------------------------------------------------------
 
 INSTALLED_APPS = [
