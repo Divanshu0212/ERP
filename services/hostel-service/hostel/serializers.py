@@ -70,6 +70,10 @@ class RoomCreateSerializer(serializers.Serializer):
     capacity = serializers.IntegerField(min_value=1, default=2)
 
 
+class RoomCapacityUpdateSerializer(serializers.Serializer):
+    capacity = serializers.IntegerField(min_value=1)
+
+
 class AllocationImportRowSerializer(serializers.ModelSerializer):
     allocation_id = serializers.SerializerMethodField()
 
