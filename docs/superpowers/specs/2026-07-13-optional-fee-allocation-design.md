@@ -75,9 +75,32 @@ there is no more "unspecified but still charge something" state.
 ### 2. Fee-bearing allocation requires a due date
 
 `fee_structure_id` and `due_date` become a package: whenever a caller
-supplies `fee_structure_id` (single-add, bulk CSV, or room-request
-approval), `due_date` is required in that same request and validated as a
-future date. Supplying one without the other is a 400.
+supplies `fee_structure_id`, `due_date` is required in that same request
+(and vice versa) and validated as a future date. Supplying one without the
+other is a 400.
+
+- **Single-add** (`AllocateRequestSerializer`): two new optional fields,
+  `fee_structure_id` (UUIDField) and `due_date` (DateField), both
+  `required=False`. Cross-field validation (both-or-neither) happens in
+  `AllocateView.post` after `serializer.is_valid()`, mirroring how
+  `AllocateBulkView` already does per-row validation rather than relying on
+  DRF's serializer-level validation for this kind of pairing.
+- **Bulk CSV/XLSX** (per-row, per the brainstormed decision): the parser
+  and template both gain two more columns, `fee_structure_id` and
+  `due_date` (ISO `YYYY-MM-DD`), both blank-able. `_parse_rows` returns
+  4-tuples now: `(room_id, student_user_code, fee_structure_id_raw,
+  due_date_raw)`. A row with one filled and the other blank is recorded as
+  `AllocationImportRow.Status.FAILED` (not `SKIPPED` — that status is
+  reserved for "no student code at all", a different case) with a clear
+  `error_message`, and does not block the rest of the batch — same
+  per-row-independent handling `AllocateBulkView` already does for
+  `RoomFullError`/`LookupFailed`. `AvailableRoomsTemplateView`'s generated
+  CSV gains the same two columns, both left blank on every row (warden
+  fills them in only for rows that need a fee).
+- **Room-request approval** (`RoomRequestApproveSerializer`): `fee_structure_id`
+  changes from mandatory to `required=False`, `due_date` added as
+  `required=False`. Same both-or-neither validation in
+  `ApproveRoomRequestView.post`.
 
 `due_date` flows through the existing `hostel.allocation.requested` event
 payload (same channel `fee_structure_id`/`university_name` already use) and
@@ -172,11 +195,17 @@ Warden allocates (single/bulk/approve)
 
 ## Testing
 
-- `AllocateView`/`AllocateBulkView`/`ApproveRoomRequestView`:
-  fee_structure_id without due_date (or vice versa) rejected with 400; both
-  together succeed and allocation stays `pending`; neither given succeeds
-  as a direct allocation with status `confirmed` immediately and no
-  `OutboxEvent` of type `hostel.allocation.requested` created.
+- `AllocateView`/`ApproveRoomRequestView`: fee_structure_id without due_date
+  (or vice versa) rejected with 400; both together succeed and allocation
+  stays `pending`; neither given succeeds as a direct allocation with
+  status `confirmed` immediately and no `OutboxEvent` of type
+  `hostel.allocation.requested` created.
+- `AllocateBulkView`/`AvailableRoomsTemplateView`: a CSV row with
+  fee_structure_id filled and due_date blank (or vice versa) fails that row
+  only (batch continues) with a clear error_message; a row with both blank
+  allocates directly (confirmed immediately); a row with both filled goes
+  through the fee saga (`pending` until paid); template CSV includes the
+  two new blank columns on every row.
 - finance-service consumer test suite: unaffected by the no-fee path
   (finance-service never receives an event for it); a real
   `fee_structure_id` creates an Invoice with `due_date` stamped from the
