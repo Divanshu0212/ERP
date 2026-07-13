@@ -68,18 +68,36 @@ function WardenContent() {
   const [grievLoading, setGrievLoading] = useState(true);
   const [grievError, setGrievError] = useState<string | null>(null);
 
+  const [releaseError, setReleaseError] = useState<string | null>(null);
+
   const loadAllocations = useCallback(async () => {
     setAllocLoading(true);
     setAllocError(null);
     try {
-      const data = await api.get("/api/v1/hostel/allocations?status=pending");
-      setAllocations(listItems<Allocation>(data));
+      const [pendingData, confirmedData] = await Promise.all([
+        api.get("/api/v1/hostel/allocations?status=pending"),
+        api.get("/api/v1/hostel/allocations?status=confirmed"),
+      ]);
+      setAllocations([
+        ...listItems<Allocation>(pendingData),
+        ...listItems<Allocation>(confirmedData),
+      ]);
     } catch (e) {
       setAllocError(errMsg(e));
     } finally {
       setAllocLoading(false);
     }
   }, []);
+
+  async function releaseAllocation(id: string) {
+    setReleaseError(null);
+    try {
+      await api.post(`/api/v1/hostel/allocations/${id}/release`, {});
+      await loadAllocations();
+    } catch (err) {
+      setReleaseError(errMsg(err));
+    }
+  }
 
   const loadGrievances = useCallback(async () => {
     setGrievLoading(true);
@@ -136,18 +154,20 @@ function WardenContent() {
       <RoomRequestQueue />
 
       <DataPanel
-        title="Pending hostel allocations"
+        title="Hostel allocations"
         loading={allocLoading}
         error={allocError}
         isEmpty={allocations.length === 0}
-        emptyLabel="No pending allocations."
+        emptyLabel="No active allocations."
       >
+        {releaseError && <Alert tone="error">{releaseError}</Alert>}
         <Table>
           <THead>
             <HeaderRow>
               <TH>Student</TH>
               <TH>Room</TH>
               <TH>Status</TH>
+              <TH />
             </HeaderRow>
           </THead>
           <TBody>
@@ -157,6 +177,11 @@ function WardenContent() {
                 <TD className="font-medium">{a.room_name}</TD>
                 <TD>
                   <StatusPill status={a.status} />
+                </TD>
+                <TD>
+                  <Button type="button" onClick={() => releaseAllocation(a.id)}>
+                    Release
+                  </Button>
                 </TD>
               </Row>
             ))}
