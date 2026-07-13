@@ -50,19 +50,22 @@ neither rule.
 
 ### 1. Direct/no-fee allocation path
 
-When `fee_structure_id` is omitted from `AllocateView`/`AllocateBulkView`/
-`ApproveRoomRequestView`, `create_allocation()` publishes
-`hostel.allocation.requested` with `fee_structure_id: null` exactly as it
-does today. finance-service's `handle_allocation_requested` consumer changes:
-if `fee_structure_id` is `None`, it does NOT create an `Invoice` at all — no
-fallback to `HOSTEL_FEE_AMOUNT`. Instead it publishes a new
-`hostel.allocation.direct_confirm` event carrying just `allocation_id`.
-hostel-service gets a small new consumer handler for this event that flips
-the `Allocation` straight from `pending` to `confirmed` (mirroring
-`_apply_outcome`'s SUCCESS branch, minus any invoice/payment concept) —
-keeping the existing invariant that hostel-service alone owns writing
-`Allocation.status`, while finance-service alone owns deciding whether
-payment is required.
+`hostel.allocation.requested` is consumed ONLY by finance-service (verified:
+no other service subscribes to it), purely to trigger invoice creation. So
+when `fee_structure_id` is omitted, there is nothing for finance-service to
+do — `create_allocation()` skips publishing that event entirely and instead
+confirms the `Allocation` synchronously, in the same call, same
+`transaction.atomic()` block it already holds: status goes straight from
+`pending` to `confirmed` (room seat was already reserved by the existing
+`occupied_count += 1` a few lines above). No new event type, no new
+consumer handler, no round trip through the event bus for something
+hostel-service already knows synchronously at creation time. finance-service
+never sees this allocation at all — no invoice, no payment, no receipt.
+
+When `fee_structure_id` IS given, behavior is unchanged from today: publish
+`hostel.allocation.requested` (now also carrying `due_date`), allocation
+stays `pending` until finance-service's existing saga confirms or releases
+it.
 
 `HOSTEL_FEE_AMOUNT` constant and its silent-fallback behavior in
 `_resolve_hostel_fee_amount` are deleted — a `fee_structure_id` now either
@@ -154,9 +157,9 @@ now the second row fails cleanly with this error.
 ```
 Warden allocates (single/bulk/approve)
   |
-  |-- no fee_structure_id --> hostel.allocation.requested (fee_structure_id=null)
-  |                             -> finance: no invoice created, emits hostel.allocation.direct_confirm
-  |                             -> hostel: consumer confirms allocation immediately
+  |-- no fee_structure_id --> create_allocation() confirms synchronously,
+  |                            same transaction, no event published.
+  |                            finance-service never involved.
   |
   \-- fee_structure_id + due_date (required together)
         --> hostel.allocation.requested (fee_structure_id, due_date)
@@ -169,14 +172,17 @@ Warden allocates (single/bulk/approve)
 
 ## Testing
 
-- `AllocateView`/`AllocateBulkView`: fee_structure_id without due_date (or
-  vice versa) rejected with 400; both together succeed; neither together
-  succeeds as a direct/no-fee allocation.
-- finance-service consumer: `fee_structure_id=null` creates no Invoice and
-  emits `hostel.allocation.direct_confirm`; a real `fee_structure_id`
-  creates an Invoice with `due_date` stamped from the payload.
-- hostel-service: new consumer handler confirms a pending allocation on
-  `hostel.allocation.direct_confirm`.
+- `AllocateView`/`AllocateBulkView`/`ApproveRoomRequestView`:
+  fee_structure_id without due_date (or vice versa) rejected with 400; both
+  together succeed and allocation stays `pending`; neither given succeeds
+  as a direct allocation with status `confirmed` immediately and no
+  `OutboxEvent` of type `hostel.allocation.requested` created.
+- finance-service consumer test suite: unaffected by the no-fee path
+  (finance-service never receives an event for it); a real
+  `fee_structure_id` creates an Invoice with `due_date` stamped from the
+  payload; `HOSTEL_FEE_AMOUNT` fallback branch is deleted along with its
+  test coverage (replaced by the mandatory-due_date validation tests
+  above, which prove the fallback path is now unreachable).
 - `release_stale_pending_allocations`: releases a pending+invoiced
   allocation whose `due_date` has passed; does NOT release one whose
   `due_date` is still in the future; does NOT release one with a recorded
