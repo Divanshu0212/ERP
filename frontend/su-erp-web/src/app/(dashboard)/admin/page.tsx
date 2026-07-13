@@ -497,6 +497,8 @@ function HostelSetup() {
   const [rooms, setRooms] = useState<HostelRoom[]>([]);
   const [roomsLoading, setRoomsLoading] = useState(true);
   const [roomsError, setRoomsError] = useState<string | null>(null);
+  const [editingCapacity, setEditingCapacity] = useState<Record<string, string>>({});
+  const [capacityError, setCapacityError] = useState<string | null>(null);
 
   const loadBlocks = useCallback(async () => {
     setBlocksLoading(true);
@@ -528,6 +530,23 @@ function HostelSetup() {
     void loadBlocks();
     void loadRooms();
   }, [loadBlocks, loadRooms]);
+
+  async function updateCapacity(roomId: string) {
+    const value = editingCapacity[roomId];
+    if (!value) return;
+    setCapacityError(null);
+    try {
+      await api.patch(`/api/v1/hostel/rooms/${roomId}`, { capacity: Number(value) });
+      setEditingCapacity((prev) => {
+        const next = { ...prev };
+        delete next[roomId];
+        return next;
+      });
+      await loadRooms();
+    } catch (err) {
+      setCapacityError(fieldErrorMessage(err) ?? errMsg(err));
+    }
+  }
 
   return (
     <div className="space-y-6">
@@ -567,6 +586,7 @@ function HostelSetup() {
         isEmpty={rooms.length === 0}
         emptyLabel="No rooms yet. Add one below."
       >
+        {capacityError && <Alert tone="error">{capacityError}</Alert>}
         <Table>
           <THead>
             <HeaderRow>
@@ -581,7 +601,26 @@ function HostelSetup() {
                 <TD className="font-medium">{r.block_name}</TD>
                 <TD>{r.room_no}</TD>
                 <TD className="text-muted">
-                  {r.occupied_count}/{r.capacity}
+                  <span>{r.occupied_count}/</span>
+                  <Input
+                    className="inline-block w-16"
+                    type="number"
+                    min={1}
+                    value={editingCapacity[r.id] ?? String(r.capacity)}
+                    onChange={(e) =>
+                      setEditingCapacity((prev) => ({ ...prev, [r.id]: e.target.value }))
+                    }
+                  />
+                  <Button
+                    type="button"
+                    onClick={() => updateCapacity(r.id)}
+                    disabled={
+                      editingCapacity[r.id] === undefined ||
+                      Number(editingCapacity[r.id]) === r.capacity
+                    }
+                  >
+                    Save
+                  </Button>
                 </TD>
               </Row>
             ))}
