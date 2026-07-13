@@ -10,6 +10,7 @@ from accounts.views import (
     RefreshView,
     RegisterView,
     UserAdminView,
+    UserBulkCreateView,
     UserByCodeView,
     UserProfileView,
 )
@@ -22,6 +23,7 @@ urlpatterns = [
     path("me", MeView.as_view(), name="auth-me"),
     path("institution", InstitutionView.as_view(), name="auth-institution"),
     path("users", UserAdminView.as_view(), name="auth-users"),
+    path("users/bulk/", UserBulkCreateView.as_view(), name="auth-users-bulk"),
     path("users/by-code/", UserByCodeView.as_view(), name="auth-user-by-code"),
     path("users/me/profile/", MyProfileView.as_view(), name="auth-my-profile"),
     path("users/<str:user_code>/profile/", UserProfileView.as_view(), name="auth-user-profile"),
