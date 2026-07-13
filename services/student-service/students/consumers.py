@@ -35,7 +35,19 @@ logger = logging.getLogger(__name__)
 
 @idempotent
 def handle_user_registered(event: dict) -> None:
-    """Handle user.registered: create a StudentProfile iff role == student."""
+    """Handle user.registered: create a StudentProfile iff role == student.
+
+    Known gap (accepted for v1's eventual-background-sync design): if this
+    handler raises, ``suerp_common.events.make_consumer`` nacks the delivery
+    with ``requeue=False``, which routes it to the dead-letter exchange
+    ``suerp.events.dlx`` (see shared/libs/suerp_common/suerp_common/events.py).
+    Nothing currently consumes or replays that DLX for student-service, so a
+    User can end up existing in auth-service with no matching StudentProfile,
+    silently and permanently. TODO: a future fix would be either (a) a
+    periodic reconciliation job that diffs auth-service's student user_codes
+    against StudentProfile rows and backfills the missing ones, or (b) a DLX
+    drain/replay consumer for this queue. Neither exists yet.
+    """
     payload = event["payload"]
     if payload.get("role") != "student":
         return

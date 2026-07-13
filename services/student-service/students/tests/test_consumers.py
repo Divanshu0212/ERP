@@ -7,6 +7,7 @@ import pytest
 from students.consumers import dispatch, handle_user_registered
 from students.models import StudentProfile
 from suerp_common.inbox import ProcessedEvent
+from suerp_common.outbox import publish_event
 
 pytestmark = pytest.mark.django_db
 
@@ -85,3 +86,37 @@ def test_dispatch_ignores_unknown_event_type(caplog):
     dispatch(event)  # must not raise
 
     assert not StudentProfile.all_objects.filter(user_code="STU-UNKNOWN").exists()
+
+
+def test_consumer_accepts_the_exact_payload_shape_auth_service_publishes():
+    # Shape-contract test: every other test here hand-builds the event dict,
+    # which proves nothing about whether it matches what auth-service's
+    # UserBulkCreateView.post actually publishes (services/auth-service/
+    # accounts/views.py). A drift between the two — e.g. a renamed key, or a
+    # missing RABBITMQ_URL setting that silently broke publishing — would
+    # sail through every unit test on both sides and only surface in manual
+    # end-to-end testing, which is exactly what happened once already on
+    # this branch. This test goes through the SAME code path auth-service
+    # uses (suerp_common.outbox.publish_event, then OutboxEvent.as_event())
+    # to build the event, then feeds that exact dict into this service's
+    # own dispatch — proving the shape, not a re-mock of it.
+    tenant_id = uuid.uuid4()
+    outbox_row = publish_event(
+        "user.registered",
+        tenant_id=str(tenant_id),
+        payload={
+            "user_code": "STU-CONTRACT",
+            "role": "student",
+            "department": "CS",
+            "batch": "2026",
+            "semester": 4,
+        },
+    )
+    event = outbox_row.as_event()
+
+    dispatch(event)
+
+    profile = StudentProfile.all_objects.get(tenant_id=tenant_id, user_code="STU-CONTRACT")
+    assert profile.department == "CS"
+    assert profile.batch == "2026"
+    assert profile.semester == 4
