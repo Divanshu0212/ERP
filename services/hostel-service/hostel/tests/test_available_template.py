@@ -30,7 +30,13 @@ def test_returns_one_row_per_free_seat():
 
     content = response.content.decode("utf-8")
     reader = csv.DictReader(io.StringIO(content))
-    assert reader.fieldnames == ["room_id", "room_name", "student_user_code"]
+    assert reader.fieldnames == [
+        "room_id",
+        "room_name",
+        "student_user_code",
+        "fee_structure_id",
+        "due_date",
+    ]
     rows = list(reader)
 
     available_rows = [r for r in rows if r["room_id"] == str(available.id)]
@@ -38,6 +44,8 @@ def test_returns_one_row_per_free_seat():
     for row in available_rows:
         assert row["room_name"] == f"{available.block.name} - {available.room_no}"
         assert row["student_user_code"] == ""
+        assert row["fee_structure_id"] == ""
+        assert row["due_date"] == ""
 
     partial_rows = [r for r in rows if r["room_id"] == str(partially_full.id)]
     assert len(partial_rows) == 1
