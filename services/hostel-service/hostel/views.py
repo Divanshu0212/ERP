@@ -50,7 +50,7 @@ from hostel.serializers import (
     RoomRequestSerializer,
     RoomSerializer,
 )
-from hostel.services import RoomFullError, create_allocation
+from hostel.services import RoomFullError, StudentAlreadyAllocatedError, create_allocation
 from rest_framework.generics import ListAPIView, ListCreateAPIView, RetrieveAPIView
 from rest_framework.parsers import MultiPartParser
 from rest_framework.permissions import IsAuthenticated
@@ -97,12 +97,14 @@ class AvailableRoomsTemplateView(APIView):
 
         buffer = io.StringIO()
         writer = csv.writer(buffer)
-        writer.writerow(["room_id", "room_name", "student_user_code"])
+        writer.writerow(
+            ["room_id", "room_name", "student_user_code", "fee_structure_id", "due_date"]
+        )
         for room in rooms:
             free_seats = room.capacity - room.occupied_count
             room_name = f"{room.block.name} - {room.room_no}"
             for _ in range(free_seats):
-                writer.writerow([str(room.id), room_name, ""])
+                writer.writerow([str(room.id), room_name, "", "", ""])
 
         response = HttpResponse(buffer.getvalue(), content_type="text/csv")
         response["Content-Disposition"] = 'attachment; filename="allocation-template.csv"'
@@ -318,6 +320,14 @@ class ApproveRoomRequestView(APIView):
         if not serializer.is_valid():
             return fail("Invalid approval payload.", errors=serializer.errors, status=400)
 
+        fee_structure_id = serializer.validated_data.get("fee_structure_id")
+        due_date = serializer.validated_data.get("due_date")
+        if bool(fee_structure_id) != bool(due_date):
+            return fail(
+                "fee_structure_id and due_date must be given together, or neither.",
+                status=400,
+            )
+
         # Fetch by id alone (any status): an unknown id 404s, but an
         # already-decided one must reach the conditional update below so it
         # short-circuits to a clean 400 "already decided" — not a 404.
@@ -347,13 +357,16 @@ class ApproveRoomRequestView(APIView):
                     room_request.room_id,
                     room_request.student_user_code,
                     get_current_tenant(),
-                    fee_structure_id=serializer.validated_data["fee_structure_id"],
+                    fee_structure_id=fee_structure_id,
                     university_name=university_name,
+                    due_date=due_date,
                 )
         except RoomFullError:
             # The flip is rolled back with the surrounding atomic block, so the
             # request stays pending (not stranded as approved-with-no-allocation).
             return fail("Room is no longer available.", status=400)
+        except StudentAlreadyAllocatedError as exc:
+            return fail(str(exc), status=400)
 
         room_request.refresh_from_db()
         return ok(RoomRequestSerializer(room_request).data, message="Room request approved.")
@@ -439,6 +452,14 @@ class AllocateView(APIView):
 
         room_id = serializer.validated_data["room_id"]
         student_user_code = serializer.validated_data["student_user_code"]
+        fee_structure_id = serializer.validated_data.get("fee_structure_id")
+        due_date = serializer.validated_data.get("due_date")
+
+        if bool(fee_structure_id) != bool(due_date):
+            return fail(
+                "fee_structure_id and due_date must be given together, or neither.",
+                status=400,
+            )
 
         try:
             student = resolve_user_by_code(
@@ -448,9 +469,17 @@ class AllocateView(APIView):
             return fail(str(exc), status=400 if exc.reason == "not_found" else 502)
 
         try:
-            allocation = create_allocation(room_id, student["user_code"], get_current_tenant())
+            allocation = create_allocation(
+                room_id,
+                student["user_code"],
+                get_current_tenant(),
+                fee_structure_id=fee_structure_id,
+                due_date=due_date,
+            )
         except RoomFullError:
             return fail("Room at full capacity.", status=400)
+        except StudentAlreadyAllocatedError as exc:
+            return fail(str(exc), status=400)
 
         return ok(
             AllocationSerializer(allocation).data,
@@ -462,12 +491,16 @@ class AllocateView(APIView):
 ALLOWED_EXTENSIONS = {"csv", "xlsx"}
 
 
-def _parse_rows(upload, extension) -> list[tuple[str, str]]:
-    """Parse an uploaded CSV/XLSX into a list of (room_id, student_user_code) tuples.
+def _parse_rows(upload, extension) -> list[tuple[str, str, str, str]]:
+    """Parse an uploaded CSV/XLSX into a list of
+    (room_id, student_user_code, fee_structure_id_raw, due_date_raw) tuples.
 
-    Expects a header row with columns ``room_id`` and ``student_user_code``
-    (any order, case-insensitive).
+    Expects a header row with columns room_id, student_user_code,
+    fee_structure_id, due_date (any order, case-insensitive).
+    fee_structure_id/due_date may be blank per row.
     """
+    columns = ("room_id", "student_user_code", "fee_structure_id", "due_date")
+
     if extension == "csv":
         text = upload.read().decode("utf-8-sig")
         reader = csv.DictReader(io.StringIO(text))
@@ -477,12 +510,7 @@ def _parse_rows(upload, extension) -> list[tuple[str, str]]:
         rows = []
         for record in reader:
             normalized = {k.strip().lower(): v for k, v in record.items() if k}
-            rows.append(
-                (
-                    (normalized.get("room_id") or "").strip(),
-                    (normalized.get("student_user_code") or "").strip(),
-                )
-            )
+            rows.append(tuple((normalized.get(col) or "").strip() for col in columns))
         return rows
 
     workbook = openpyxl.load_workbook(upload, read_only=True, data_only=True)
@@ -493,20 +521,20 @@ def _parse_rows(upload, extension) -> list[tuple[str, str]]:
     header = [str(c).strip().lower() if c is not None else "" for c in sheet_rows[0]]
     if "room_id" not in header or "student_user_code" not in header:
         raise ValueError("XLSX must have room_id and student_user_code columns.")
-    room_idx = header.index("room_id")
-    code_idx = header.index("student_user_code")
+    col_idx = {col: header.index(col) if col in header else None for col in columns}
     rows = []
     for record in sheet_rows[1:]:
         if record is None or all(c is None for c in record):
             continue
-        room_val = record[room_idx] if room_idx < len(record) else None
-        code_val = record[code_idx] if code_idx < len(record) else None
-        rows.append(
-            (
-                str(room_val).strip() if room_val is not None else "",
-                str(code_val).strip() if code_val is not None else "",
-            )
-        )
+
+        def _cell(col):
+            idx = col_idx[col]
+            if idx is None or idx >= len(record):
+                return ""
+            value = record[idx]
+            return str(value).strip() if value is not None else ""
+
+        rows.append(tuple(_cell(col) for col in columns))
     return rows
 
 
@@ -553,7 +581,12 @@ class AllocateBulkView(APIView):
         fail_count = 0
         skipped_count = 0
 
-        for row_number, (room_id_raw, student_user_code_raw) in enumerate(rows, start=1):
+        for row_number, (
+            room_id_raw,
+            student_user_code_raw,
+            fee_structure_id_raw,
+            due_date_raw,
+        ) in enumerate(rows, start=1):
             error_message = ""
             allocation = None
             row_status = AllocationImportRow.Status.FAILED
@@ -562,6 +595,9 @@ class AllocateBulkView(APIView):
                 error_message = "Row skipped: no user_code provided."
                 row_status = AllocationImportRow.Status.SKIPPED
                 skipped_count += 1
+            elif bool(fee_structure_id_raw) != bool(due_date_raw):
+                error_message = "fee_structure_id and due_date must be given together, or neither."
+                fail_count += 1
             else:
                 try:
                     if student_user_code_raw not in code_cache:
@@ -571,7 +607,16 @@ class AllocateBulkView(APIView):
                     student = code_cache[student_user_code_raw]
 
                     room_uuid = uuid_lib.UUID(room_id_raw)
-                    allocation = create_allocation(room_uuid, student["user_code"], tenant_id)
+                    fee_structure_id = (
+                        uuid_lib.UUID(fee_structure_id_raw) if fee_structure_id_raw else None
+                    )
+                    allocation = create_allocation(
+                        room_uuid,
+                        student["user_code"],
+                        tenant_id,
+                        fee_structure_id=fee_structure_id,
+                        due_date=due_date_raw or None,
+                    )
                     row_status = AllocationImportRow.Status.SUCCESS
                     success_count += 1
                 except LookupFailed as exc:
@@ -581,6 +626,9 @@ class AllocateBulkView(APIView):
                     error_message = f"Room {room_id_raw} not found."
                     fail_count += 1
                 except RoomFullError as exc:
+                    error_message = str(exc)
+                    fail_count += 1
+                except StudentAlreadyAllocatedError as exc:
                     error_message = str(exc)
                     fail_count += 1
                 except ValueError as exc:

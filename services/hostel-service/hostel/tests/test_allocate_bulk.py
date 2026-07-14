@@ -20,7 +20,13 @@ from hostel.tests.test_allocate import _auth_client, _make_room  # noqa: E402
 
 
 def _csv_file(rows, filename="import.csv"):
-    lines = ["room_id,student_user_code"] + [f"{r},{e}" for r, e in rows]
+    """rows: list of (room_id, student_user_code) 2-tuples OR
+    (room_id, student_user_code, fee_structure_id, due_date) 4-tuples."""
+    lines = ["room_id,student_user_code,fee_structure_id,due_date"]
+    for r in rows:
+        if len(r) == 2:
+            r = (r[0], r[1], "", "")
+        lines.append(",".join(r))
     content = "\n".join(lines).encode("utf-8")
     return io.BytesIO(content), filename
 
@@ -28,9 +34,11 @@ def _csv_file(rows, filename="import.csv"):
 def _xlsx_file(rows, filename="import.xlsx"):
     workbook = openpyxl.Workbook()
     sheet = workbook.active
-    sheet.append(["room_id", "student_user_code"])
-    for r, e in rows:
-        sheet.append([r, e])
+    sheet.append(["room_id", "student_user_code", "fee_structure_id", "due_date"])
+    for r in rows:
+        if len(r) == 2:
+            r = (r[0], r[1], "", "")
+        sheet.append(list(r))
     buf = io.BytesIO()
     workbook.save(buf)
     buf.seek(0)

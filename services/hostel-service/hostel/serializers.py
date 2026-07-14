@@ -18,6 +18,8 @@ from rest_framework import serializers
 class AllocateRequestSerializer(serializers.Serializer):
     room_id = serializers.UUIDField()
     student_user_code = serializers.RegexField(r"^[A-Za-z0-9_-]{1,30}$")
+    fee_structure_id = serializers.UUIDField(required=False)
+    due_date = serializers.DateField(required=False)
 
 
 class AllocationSerializer(serializers.ModelSerializer):
@@ -142,7 +144,8 @@ class RoomRequestSerializer(serializers.ModelSerializer):
 
 
 class RoomRequestApproveSerializer(serializers.Serializer):
-    fee_structure_id = serializers.UUIDField()
+    fee_structure_id = serializers.UUIDField(required=False)
+    due_date = serializers.DateField(required=False)
 
 
 class RoomRequestRejectSerializer(serializers.Serializer):
