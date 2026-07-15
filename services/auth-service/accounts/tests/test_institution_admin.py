@@ -137,6 +137,40 @@ def test_list_users_requires_authentication(client):
     assert resp.status_code == 401
 
 
+def test_user_list_filters_by_is_active(client):
+    inst = _make_institution()
+    admin_token = _admin_token(client, inst)
+    active_code = _register(
+        client, inst, email="active@example.com", role=User.Role.STUDENT
+    ).json()["data"]["user_code"]
+    inactive_code = _register(
+        client, inst, email="inactive@example.com", role=User.Role.STUDENT
+    ).json()["data"]["user_code"]
+
+    inactive_user = User.objects.get(pk=inactive_code)
+    inactive_user.is_active = False
+    inactive_user.save(update_fields=["is_active"])
+
+    resp = client.get(
+        "/api/v1/auth/users?is_active=true",
+        HTTP_AUTHORIZATION=f"Bearer {admin_token}",
+    )
+    assert resp.status_code == 200, resp.content
+    codes = {u["user_code"] for u in resp.json()["data"]["results"]}
+    assert active_code in codes
+    assert inactive_code not in codes
+    assert admin_token  # admin itself is active too, sanity
+
+    resp2 = client.get(
+        "/api/v1/auth/users?is_active=false",
+        HTTP_AUTHORIZATION=f"Bearer {admin_token}",
+    )
+    assert resp2.status_code == 200, resp2.content
+    codes2 = {u["user_code"] for u in resp2.json()["data"]["results"]}
+    assert inactive_code in codes2
+    assert active_code not in codes2
+
+
 # --- POST /auth/users ------------------------------------------------------
 
 
