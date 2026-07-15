@@ -501,3 +501,9 @@ the agreed design, kept here instead of a separate spec doc.
 - **CI:** GitHub Actions (`.github/workflows/ci.yml`) runs a matrix over the services —
   `ruff`/`black`/`isort` → `pytest --cov` (fails under 70%) → `bandit`/`pip-audit` →
   `docker build` — with ephemeral Postgres/Redis service containers for the test step.
+
+---
+
+## Recent changes
+
+- Admin can now view all users in their tenant and bulk-deactivate (soft-delete) selected accounts from **Admin → Users**. Deactivated users are kept in the database (not hard-deleted) and can no longer sign in. Self-delete and removing the tenant's last active admin are blocked server-side.
