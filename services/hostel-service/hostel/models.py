@@ -78,6 +78,12 @@ class Allocation(TenantModel):
     # correlating this allocation with its hostel-fee invoice. Bare UUID
     # (finance-service owns the Invoice row in its own database).
     invoice_id = models.UUIDField(null=True, blank=True)
+    # Payment deadline, set only when this allocation carries a fee (see
+    # hostel/services.py create_allocation). release_stale_pending_allocations
+    # (hostel/tasks.py) releases a pending allocation once this date passes
+    # unpaid. Null for direct/no-fee allocations, which are never pending in
+    # the first place (confirmed synchronously at creation).
+    due_date = models.DateField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -85,6 +91,18 @@ class Allocation(TenantModel):
             models.Index(fields=["tenant_id", "status"], name="allocation_tenant_status"),
             models.Index(
                 fields=["tenant_id", "student_user_code"], name="allocation_tenant_student"
+            ),
+        ]
+        constraints = [
+            # A student can hold at most ONE active (pending or confirmed)
+            # allocation at a time, across any room. Scoped to these two
+            # statuses so a released allocation never blocks a later
+            # reallocation for the same student — mirrors the existing
+            # RoomRequest.roomrequest_one_pending_per_student_room pattern.
+            models.UniqueConstraint(
+                fields=["tenant_id", "student_user_code"],
+                condition=models.Q(status__in=["pending", "confirmed"]),
+                name="allocation_one_active_per_student",
             ),
         ]
 

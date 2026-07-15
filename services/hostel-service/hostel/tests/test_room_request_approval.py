@@ -40,7 +40,7 @@ def test_warden_approves_request_creates_allocation_with_fee_and_university(mock
     warden_client = _auth_client(tenant_id, role="warden")
     response = warden_client.post(
         f"/api/v1/hostel/room-requests/{request_id}/approve",
-        {"fee_structure_id": str(fee_structure_id)},
+        {"fee_structure_id": str(fee_structure_id), "due_date": "2026-08-01"},
         format="json",
     )
 
@@ -86,14 +86,14 @@ def test_double_approve_does_not_create_second_allocation(mock_get):
 
     first = warden_client.post(
         f"/api/v1/hostel/room-requests/{request_id}/approve",
-        {"fee_structure_id": str(fee_structure_id)},
+        {"fee_structure_id": str(fee_structure_id), "due_date": "2026-08-01"},
         format="json",
     )
     assert first.status_code == 200, first.content
 
     second = warden_client.post(
         f"/api/v1/hostel/room-requests/{request_id}/approve",
-        {"fee_structure_id": str(fee_structure_id)},
+        {"fee_structure_id": str(fee_structure_id), "due_date": "2026-08-01"},
         format="json",
     )
     assert second.status_code == 400, second.content
