@@ -14,8 +14,8 @@ and emits ``finance.invoice.created``). This module closes the loop:
 3. ``handle_payment_failed`` — releases the Allocation (the compensating
    action) and decrements the room's ``occupied_count``.
 4. ``release_stale_pending_allocations`` (Celery task, tasks.py) — the
-   timeout-based compensating action for allocations that never got a
-   terminal payment event at all.
+   due-date-expiry compensating action for allocations that never got a
+   terminal payment event before their payment deadline.
 
 All three handlers are called directly with constructed event dicts (no
 broker) per the reference pattern in
@@ -32,7 +32,7 @@ import pytest
 from django.utils import timezone
 from hostel.consumers import handle_invoice_created, handle_payment_failed, handle_payment_success
 from hostel.models import Allocation, Block, PaymentOutcome, Room
-from hostel.tasks import PENDING_TIMEOUT, release_stale_pending_allocations
+from hostel.tasks import release_stale_pending_allocations
 from suerp_common.events import build_event
 from suerp_common.outbox import OutboxEvent
 
@@ -274,8 +274,8 @@ def test_timeout_guard_does_not_release_paid_allocation():
     invoice_id = uuid.uuid4()
     room = _make_room(tenant_id, capacity=2, occupied_count=1)
     allocation = _make_allocation(tenant_id, room, status="pending", invoice_id=invoice_id)
-    old_time = timezone.now() - PENDING_TIMEOUT - timedelta(minutes=1)
-    Allocation.all_objects.filter(id=allocation.id).update(allocated_on=old_time)
+    allocation.due_date = (timezone.now() - timedelta(days=1)).date()
+    allocation.save(update_fields=["due_date"])
 
     PaymentOutcome.all_objects.create(
         tenant_id=tenant_id, invoice_id=invoice_id, outcome="success", applied=False
@@ -300,13 +300,15 @@ def test_release_stale_pending_allocations_releases_timed_out_ones_only():
     stale_allocation = _make_allocation(
         tenant_id, stale_room, status="pending", invoice_id=uuid.uuid4()
     )
-    old_time = timezone.now() - PENDING_TIMEOUT - timedelta(minutes=1)
-    Allocation.all_objects.filter(id=stale_allocation.id).update(allocated_on=old_time)
+    stale_allocation.due_date = (timezone.now() - timedelta(days=1)).date()
+    stale_allocation.save(update_fields=["due_date"])
 
     fresh_room = _make_room(tenant_id, capacity=2, occupied_count=1, room_no="202")
     fresh_allocation = _make_allocation(
         tenant_id, fresh_room, status="pending", invoice_id=uuid.uuid4()
     )
+    fresh_allocation.due_date = (timezone.now() + timedelta(days=7)).date()
+    fresh_allocation.save(update_fields=["due_date"])
 
     released = release_stale_pending_allocations()
     assert released == 1
@@ -329,8 +331,8 @@ def test_timeout_does_not_release_uninvoiced_stale_allocation():
     tenant_id = uuid.uuid4()
     room = _make_room(tenant_id, capacity=2, occupied_count=1)
     allocation = _make_allocation(tenant_id, room, status="pending", invoice_id=None)
-    old_time = timezone.now() - PENDING_TIMEOUT - timedelta(minutes=1)
-    Allocation.all_objects.filter(id=allocation.id).update(allocated_on=old_time)
+    allocation.due_date = (timezone.now() - timedelta(days=1)).date()
+    allocation.save(update_fields=["due_date"])
 
     released = release_stale_pending_allocations()
     assert released == 0
@@ -354,8 +356,8 @@ def test_timeout_never_releases_paid_but_uncorrelated_allocation():
     room = _make_room(tenant_id, capacity=2, occupied_count=1)
     # Allocation stays PENDING with invoice_id NULL — invoice.created hasn't run.
     allocation = _make_allocation(tenant_id, room, student_user_code=student_id, status="pending")
-    old_time = timezone.now() - PENDING_TIMEOUT - timedelta(minutes=1)
-    Allocation.all_objects.filter(id=allocation.id).update(allocated_on=old_time)
+    allocation.due_date = (timezone.now() - timedelta(days=1)).date()
+    allocation.save(update_fields=["due_date"])
 
     # payment.success arrived first: recorded but not yet applied.
     success_event = _payment_success_event(tenant_id, invoice_id=invoice_id, student_id=student_id)

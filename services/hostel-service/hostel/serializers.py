@@ -4,6 +4,7 @@ Request validation and response shaping only — the allocate flow's actual
 capacity-check/atomic-commit/outbox logic lives in ``hostel.views.AllocateView``.
 """
 
+from django.utils import timezone
 from hostel.models import (
     Allocation,
     AllocationImportBatch,
@@ -15,9 +16,19 @@ from hostel.models import (
 from rest_framework import serializers
 
 
+def validate_future_due_date(value):
+    """A payment deadline in the past or today is a data-integrity foot-gun:
+    release_stale_pending_allocations would expire the allocation on its very
+    next run, silently freeing the seat moments after it was granted."""
+    if value <= timezone.now().date():
+        raise serializers.ValidationError("due_date must be in the future.")
+
+
 class AllocateRequestSerializer(serializers.Serializer):
     room_id = serializers.UUIDField()
     student_user_code = serializers.RegexField(r"^[A-Za-z0-9_-]{1,30}$")
+    fee_structure_id = serializers.UUIDField(required=False)
+    due_date = serializers.DateField(required=False, validators=[validate_future_due_date])
 
 
 class AllocationSerializer(serializers.ModelSerializer):
@@ -142,7 +153,8 @@ class RoomRequestSerializer(serializers.ModelSerializer):
 
 
 class RoomRequestApproveSerializer(serializers.Serializer):
-    fee_structure_id = serializers.UUIDField()
+    fee_structure_id = serializers.UUIDField(required=False)
+    due_date = serializers.DateField(required=False, validators=[validate_future_due_date])
 
 
 class RoomRequestRejectSerializer(serializers.Serializer):

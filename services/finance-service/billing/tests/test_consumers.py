@@ -1,7 +1,8 @@
 """billing.consumers.handle_allocation_requested: creates a pending hostel
-Invoice reacting to hostel.allocation.requested. Covers both the legacy path
-(no fee_structure_id — falls back to the hardcoded default) and the new
-FeeStructure-driven path introduced alongside room-request approval.
+Invoice reacting to hostel.allocation.requested. Every delivery now carries a
+real fee_structure_id (hostel-service's no-fee path never publishes this
+event at all — see Task 3), so this covers the FeeStructure-driven path and
+the unresolvable-id failure mode (deleted/cross-tenant/typo'd id).
 """
 
 import uuid
@@ -53,26 +54,23 @@ def test_uses_fee_structure_amount_and_stamps_university_name():
     assert invoice.university_name == "Test University"
 
 
-def test_falls_back_to_hardcoded_default_without_fee_structure():
+def test_unresolvable_fee_structure_id_logs_and_skips_invoice_creation():
+    """A fee_structure_id that doesn't resolve (deleted/cross-tenant/typo'd)
+    must not crash the consumer or silently create an invoice with a wrong
+    amount — log and skip, matching handle_invoice_created's existing
+    best-effort correlation-failure pattern.
+    """
     tenant_id = uuid.uuid4()
-    event = _event(tenant_id)
+    event = _event(
+        tenant_id,
+        fee_structure_id=str(uuid.uuid4()),  # doesn't exist
+        due_date="2026-08-01",
+        university_name="Test University",
+    )
 
-    handle_allocation_requested(event)
+    handle_allocation_requested(event)  # must not raise
 
-    invoice = Invoice.all_objects.get(tenant_id=tenant_id)
-    assert invoice.amount == Decimal("5000.00")
-    assert invoice.university_name == ""
-
-
-def test_missing_fee_structure_id_falls_back_gracefully():
-    tenant_id = uuid.uuid4()
-    nonexistent_id = str(uuid.uuid4())
-    event = _event(tenant_id, fee_structure_id=nonexistent_id)
-
-    handle_allocation_requested(event)
-
-    invoice = Invoice.all_objects.get(tenant_id=tenant_id)
-    assert invoice.amount == Decimal("5000.00")
+    assert not Invoice.all_objects.filter(tenant_id=tenant_id).exists()
 
 
 def _hostel_allocation_requested_event(
