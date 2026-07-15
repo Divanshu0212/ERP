@@ -27,6 +27,7 @@ from accounts.serializers import (
 from django.conf import settings
 from django.contrib.auth import authenticate
 from django.db import transaction
+from django.db.utils import OperationalError
 from django.utils import timezone
 from rest_framework.generics import ListAPIView
 from rest_framework.permissions import AllowAny, IsAuthenticated
@@ -416,6 +417,18 @@ class UserBulkDeactivateView(APIView):
                     )
             except User.DoesNotExist:
                 failed.append({"user_code": user_code, "error": "User not found."})
+                continue
+            except OperationalError:
+                # Postgres's deadlock detector can abort this transaction
+                # when two concurrent requests each lock their own target
+                # row first and then need the OTHER request's target row
+                # via the other_active_admins lock above — a circular wait.
+                # Surface it as a per-row failure instead of a 500 so the
+                # rest of the batch still gets a clean partial result.
+                failed.append({
+                    "user_code": user_code,
+                    "error": "Could not process due to a concurrent update; please retry.",
+                })
                 continue
 
             deactivated.append({"user_code": user.user_code, "email": user.email})
