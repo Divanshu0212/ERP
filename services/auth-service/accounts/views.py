@@ -343,6 +343,78 @@ def _first_error_message(errors: dict) -> str:
     return "Invalid row."
 
 
+class UserBulkDeactivateView(APIView):
+    """POST /api/v1/auth/users/bulk-delete/ — admin bulk soft-delete.
+
+    Soft-delete only (``is_active = False``) — other services hold this
+    user's ``user_code`` as a loose string reference with no real FK (each
+    service owns its own database), so a hard delete would silently orphan
+    rows in student-service/hostel-service/finance-service/etc. Setting
+    is_active=False keeps the row (and every cross-service reference to it)
+    intact while blocking login (see LoginView/TenantAuthBackend).
+
+    Each user_code is processed independently — one bad entry (unknown
+    code, self-delete, last-admin) does not abort the rest of the batch,
+    matching UserBulkCreateView's partial-failure contract.
+    """
+
+    permission_classes = [role_required("admin")]
+
+    def post(self, request):
+        user_codes = request.data.get("user_codes")
+        if not isinstance(user_codes, list) or len(user_codes) == 0:
+            return fail("Request must include a non-empty 'user_codes' list.", status=400)
+
+        tenant_id = request.user.tenant_id
+        caller_code = request.user.id
+
+        deactivated = []
+        failed = []
+
+        for user_code in user_codes:
+            try:
+                with transaction.atomic():
+                    user = User.objects.select_for_update().get(
+                        pk=user_code, tenant_id=tenant_id
+                    )
+
+                    if user.user_code == caller_code:
+                        failed.append({
+                            "user_code": user_code,
+                            "error": "Cannot deactivate your own account.",
+                        })
+                        continue
+
+                    if user.role == User.Role.ADMIN and user.is_active:
+                        other_active_admins = User.objects.filter(
+                            tenant_id=tenant_id, role=User.Role.ADMIN, is_active=True
+                        ).exclude(pk=user.pk)
+                        if not other_active_admins.exists():
+                            failed.append({
+                                "user_code": user_code,
+                                "error": "Cannot deactivate the last active admin.",
+                            })
+                            continue
+
+                    user.is_active = False
+                    user.save(update_fields=["is_active"])
+                    publish_event(
+                        "user.deactivated",
+                        tenant_id=str(tenant_id),
+                        payload={"user_code": user.user_code, "role": user.role},
+                    )
+            except User.DoesNotExist:
+                failed.append({"user_code": user_code, "error": "User not found."})
+                continue
+
+            deactivated.append({"user_code": user.user_code, "email": user.email})
+
+        return ok(
+            {"deactivated": deactivated, "failed": failed},
+            message=f"{len(deactivated)} user(s) deactivated, {len(failed)} failed.",
+        )
+
+
 class UserByCodeView(APIView):
     """GET /api/v1/auth/users/by-code/?user_code=... — resolve a user_code to
     its User row within the caller's own tenant.

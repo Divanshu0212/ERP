@@ -11,6 +11,7 @@ from accounts.views import (
     RegisterView,
     UserAdminView,
     UserBulkCreateView,
+    UserBulkDeactivateView,
     UserByCodeView,
     UserProfileView,
 )
@@ -24,6 +25,7 @@ urlpatterns = [
     path("institution", InstitutionView.as_view(), name="auth-institution"),
     path("users", UserAdminView.as_view(), name="auth-users"),
     path("users/bulk/", UserBulkCreateView.as_view(), name="auth-users-bulk"),
+    path("users/bulk-delete/", UserBulkDeactivateView.as_view(), name="auth-users-bulk-delete"),
     path("users/by-code/", UserByCodeView.as_view(), name="auth-user-by-code"),
     path("users/me/profile/", MyProfileView.as_view(), name="auth-my-profile"),
     path("users/<str:user_code>/profile/", UserProfileView.as_view(), name="auth-user-profile"),
