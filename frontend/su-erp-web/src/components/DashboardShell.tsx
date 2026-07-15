@@ -50,6 +50,7 @@ const NAV: Record<string, NavItem[]> = {
   admin: [
     { label: "Overview", href: "/admin", icon: LayoutDashboard },
     { label: "Add Students", href: "/admin/students/new", icon: GraduationCap },
+    { label: "Users", href: "/admin/users", icon: User },
     { label: "Profile", href: "/admin/profile", icon: User },
   ],
   superadmin: [{ label: "Institutions", href: "/superadmin", icon: Building2 }],
