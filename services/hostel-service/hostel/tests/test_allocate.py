@@ -69,6 +69,7 @@ def test_allocating_available_room_creates_pending_allocation_and_emits_event(mo
     tenant_id = uuid.uuid4()
     room = _make_room(tenant_id, capacity=2, occupied_count=0)
     student_user_code = "STU-100"
+    fee_structure_id = uuid.uuid4()
     mock_resolve.return_value = {
         "user_code": student_user_code,
         "email": "student@example.com",
@@ -78,7 +79,12 @@ def test_allocating_available_room_creates_pending_allocation_and_emits_event(mo
 
     response = client.post(
         "/api/v1/hostel/allocate",
-        {"room_id": str(room.id), "student_user_code": student_user_code},
+        {
+            "room_id": str(room.id),
+            "student_user_code": student_user_code,
+            "fee_structure_id": str(fee_structure_id),
+            "due_date": "2026-08-01",
+        },
         format="json",
     )
 
@@ -106,8 +112,9 @@ def test_allocating_available_room_creates_pending_allocation_and_emits_event(mo
         "allocation_id": str(allocation.id),
         "student_user_code": student_user_code,
         "room_id": str(room.id),
-        "fee_structure_id": None,
+        "fee_structure_id": str(fee_structure_id),
         "university_name": "",
+        "due_date": "2026-08-01",
     }
 
 

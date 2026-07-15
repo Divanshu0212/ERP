@@ -59,6 +59,13 @@ class Invoice(TenantModel):
     # can render a university name without finance-service ever calling
     # auth-service itself.
     university_name = models.CharField(max_length=255, blank=True, default="")
+    # Payment deadline, mirrored from hostel-service's Allocation.due_date at
+    # invoice-creation time (see billing/consumers.py:
+    # handle_allocation_requested) — each service keeps its own copy since
+    # there's no cross-service FK (DB-per-service). Used by the student-
+    # facing UI to show "due by <date>"; hostel-service's own copy (not this
+    # one) is what release_stale_pending_allocations actually checks.
+    due_date = models.DateField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
