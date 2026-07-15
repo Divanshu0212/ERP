@@ -229,7 +229,11 @@ class UserAdminView(ListAPIView):
     serializer_class = UserListSerializer
 
     def get_queryset(self):
-        return User.objects.filter(tenant_id=self.request.user.tenant_id).order_by("date_joined")
+        qs = User.objects.filter(tenant_id=self.request.user.tenant_id).order_by("date_joined")
+        is_active = self.request.query_params.get("is_active")
+        if is_active is not None:
+            qs = qs.filter(is_active=is_active.lower() == "true")
+        return qs
 
     def post(self, request):
         try:
