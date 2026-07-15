@@ -25,6 +25,7 @@ import type { MeResponse } from "@/lib/session";
 import { useAuthGuard } from "@/lib/useAuthGuard";
 import { cn } from "@/lib/cn";
 import { Avatar, Monogram } from "@/components/ui/Monogram";
+import { ThemeToggle } from "@/components/ui/ThemeToggle";
 
 import type { ReactNode } from "react";
 
@@ -233,6 +234,7 @@ export function DashboardShell({
           </div>
           <div className="flex items-center gap-3">
             <span className="hidden text-[13px] capitalize text-muted sm:inline">{role}</span>
+            <ThemeToggle />
             <Avatar label={avatarLabel} size="sm" />
           </div>
         </header>
