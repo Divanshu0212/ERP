@@ -234,12 +234,30 @@ function CreateAllocation({
 }) {
   const [roomId, setRoomId] = useState("");
   const [studentUserCode, setStudentUserCode] = useState("");
+  const [feeStructures, setFeeStructures] = useState<FeeStructure[]>([]);
+  const [feeStructureId, setFeeStructureId] = useState("");
+  const [dueDate, setDueDate] = useState("");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [ok, setOk] = useState<string | null>(null);
 
+  useEffect(() => {
+    api
+      .get("/api/v1/finance/fee-structures")
+      .then((data) => setFeeStructures(listItems<FeeStructure>(data)))
+      .catch(() => setFeeStructures([]));
+  }, []);
+
   async function submit(e: React.FormEvent) {
     e.preventDefault();
+    if (feeStructureId && !dueDate) {
+      setError("Pick a due date, or clear the fee structure for a direct allocation.");
+      return;
+    }
+    if (!feeStructureId && dueDate) {
+      setError("Pick a fee structure, or clear the due date for a direct allocation.");
+      return;
+    }
     setPending(true);
     setError(null);
     setOk(null);
@@ -247,10 +265,15 @@ function CreateAllocation({
       await api.post("/api/v1/hostel/allocate", {
         room_id: roomId,
         student_user_code: studentUserCode,
+        ...(feeStructureId && dueDate
+          ? { fee_structure_id: feeStructureId, due_date: dueDate }
+          : {}),
       });
       setOk("Allocation created.");
       setRoomId("");
       setStudentUserCode("");
+      setFeeStructureId("");
+      setDueDate("");
       onCreated();
     } catch (err) {
       setError(errMsg(err));
@@ -289,6 +312,30 @@ function CreateAllocation({
                 value={studentUserCode}
                 onChange={(e) => setStudentUserCode(e.target.value)}
                 required
+              />
+            </Field>
+            <Field label="Fee structure (optional)" htmlFor="alloc-fee">
+              <Select
+                id="alloc-fee"
+                value={feeStructureId}
+                onChange={(e) => setFeeStructureId(e.target.value)}
+              >
+                <option value="">No fee (direct allocation)</option>
+                {feeStructures.map((f) => (
+                  <option key={f.id} value={f.id}>
+                    {f.name} ({f.amount})
+                  </option>
+                ))}
+              </Select>
+            </Field>
+            <Field label="Due date" htmlFor="alloc-due-date" hint={feeStructureId ? undefined : "Only needed if a fee structure is selected."}>
+              <Input
+                id="alloc-due-date"
+                type="date"
+                value={dueDate}
+                onChange={(e) => setDueDate(e.target.value)}
+                required={!!feeStructureId}
+                disabled={!feeStructureId}
               />
             </Field>
           </div>
@@ -366,7 +413,11 @@ function BulkAllocationImport({ onImported }: { onImported: () => void }) {
             </Button>
             {templateError && <Alert tone="error">{templateError}</Alert>}
           </div>
-          <Field label="File" htmlFor="bulk-file">
+          <Field
+            label="File"
+            htmlFor="bulk-file"
+            hint="Each row needs room_id and student_user_code. fee_structure_id and due_date are optional per row — leave both blank for a direct allocation, or fill in both (due_date as YYYY-MM-DD) to raise an invoice for that student."
+          >
             <input
               id="bulk-file"
               type="file"
@@ -521,6 +572,7 @@ function RoomRequestQueue() {
   const [requests, setRequests] = useState<PendingRequest[]>([]);
   const [feeStructures, setFeeStructures] = useState<FeeStructure[]>([]);
   const [selectedFee, setSelectedFee] = useState<Record<string, string>>({});
+  const [selectedDueDate, setSelectedDueDate] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -547,15 +599,22 @@ function RoomRequestQueue() {
   }, [load]);
 
   async function approve(id: string) {
-    const feeStructureId = selectedFee[id];
-    if (!feeStructureId) {
-      setActionError("Pick a fee structure before approving.");
+    const feeStructureId = selectedFee[id] ?? "";
+    const dueDate = selectedDueDate[id] ?? "";
+    if (feeStructureId && !dueDate) {
+      setActionError("Pick a due date, or clear the fee structure to approve without a fee.");
+      return;
+    }
+    if (!feeStructureId && dueDate) {
+      setActionError("Pick a fee structure, or clear the due date to approve without a fee.");
       return;
     }
     setActionError(null);
     try {
       await api.post(`/api/v1/hostel/room-requests/${id}/approve`, {
-        fee_structure_id: feeStructureId,
+        ...(feeStructureId && dueDate
+          ? { fee_structure_id: feeStructureId, due_date: dueDate }
+          : {}),
       });
       await load();
     } catch (err) {
@@ -597,22 +656,37 @@ function RoomRequestQueue() {
               <TD className="font-medium">{r.room_name}</TD>
               <TD className="text-muted">{new Date(r.requested_on).toLocaleString()}</TD>
               <TD>
-                <Select
-                  value={selectedFee[r.id] ?? ""}
-                  onChange={(e) =>
-                    setSelectedFee((prev) => ({ ...prev, [r.id]: e.target.value }))
-                  }
-                >
-                  <option value="">Select fee…</option>
-                  {feeStructures.map((f) => (
-                    <option key={f.id} value={f.id}>
-                      {f.name} ({f.amount})
-                    </option>
-                  ))}
-                </Select>
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <Select
+                    value={selectedFee[r.id] ?? ""}
+                    onChange={(e) =>
+                      setSelectedFee((prev) => ({ ...prev, [r.id]: e.target.value }))
+                    }
+                  >
+                    <option value="">Select fee…</option>
+                    {feeStructures.map((f) => (
+                      <option key={f.id} value={f.id}>
+                        {f.name} ({f.amount})
+                      </option>
+                    ))}
+                  </Select>
+                  <Input
+                    type="date"
+                    aria-label="Due date"
+                    value={selectedDueDate[r.id] ?? ""}
+                    onChange={(e) =>
+                      setSelectedDueDate((prev) => ({ ...prev, [r.id]: e.target.value }))
+                    }
+                    disabled={!(selectedFee[r.id] ?? "")}
+                  />
+                </div>
               </TD>
               <TD className="space-x-2">
-                <Button size="sm" onClick={() => void approve(r.id)}>
+                <Button
+                  size="sm"
+                  disabled={!!(selectedFee[r.id] ?? "") !== !!(selectedDueDate[r.id] ?? "")}
+                  onClick={() => void approve(r.id)}
+                >
                   Approve
                 </Button>
                 <Button size="sm" variant="ghost" onClick={() => void reject(r.id)}>
