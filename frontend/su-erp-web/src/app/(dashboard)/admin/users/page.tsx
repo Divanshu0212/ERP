@@ -33,14 +33,15 @@ function errMsg(e: unknown): string {
   return e instanceof Error ? e.message : "Something went wrong.";
 }
 
-async function fetchUsers(showInactive: boolean): Promise<AdminUser[]> {
+async function fetchUsers(showInactive: boolean): Promise<{ users: AdminUser[]; count: number }> {
   const query = showInactive ? "" : "&is_active=true";
   const resp = await api.get<UserListResponse>(`/api/v1/auth/users?page_size=100${query}`);
-  return resp.results;
+  return { users: resp.results, count: resp.count };
 }
 
 function AdminUsersContent() {
   const [users, setUsers] = useState<AdminUser[]>([]);
+  const [totalCount, setTotalCount] = useState(0);
   const [showInactive, setShowInactive] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
@@ -54,7 +55,8 @@ function AdminUsersContent() {
     setError(null);
     try {
       const data = await fetchUsers(inactive);
-      setUsers(data);
+      setUsers(data.users);
+      setTotalCount(data.count);
       setSelected(new Set());
     } catch (err) {
       setError(errMsg(err));
@@ -110,7 +112,7 @@ function AdminUsersContent() {
                 checked={showInactive}
                 onChange={(e) => setShowInactive(e.target.checked)}
               />
-              Show inactive users
+              Include inactive users
             </label>
             <Button
               variant="danger"
@@ -138,6 +140,11 @@ function AdminUsersContent() {
           )}
 
           {error && <Alert tone="error" className="mb-4">{error}</Alert>}
+          {!loading && users.length < totalCount && (
+            <Alert tone="info" className="mb-4">
+              Showing {users.length} of {totalCount} users. Narrow with filters or contact support to manage more than 100 users at once.
+            </Alert>
+          )}
           {result && (
             <Alert tone={result.failed.length > 0 ? "info" : "success"} className="mb-4">
               {result.deactivated.length} user(s) deactivated, {result.failed.length} failed.

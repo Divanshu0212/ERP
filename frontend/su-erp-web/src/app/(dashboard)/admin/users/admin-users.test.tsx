@@ -79,4 +79,21 @@ describe("AdminUsersPage", () => {
     await screen.findByText("stu1@example.com");
     expect(screen.getByRole("button", { name: /delete selected/i })).toBeDisabled();
   });
+
+  it("refetches without the is_active filter when 'Include inactive users' is checked", async () => {
+    render(<AdminUsersPage />);
+    await screen.findByText("stu1@example.com");
+
+    const initialCalls = get.mock.calls.length;
+
+    fireEvent.click(screen.getByRole("checkbox", { name: /include inactive users/i }));
+
+    await waitFor(() => expect(get.mock.calls.length).toBeGreaterThan(initialCalls));
+
+    const usersCalls = get.mock.calls
+      .map((args) => args[0] as string)
+      .filter((path) => path.includes("/auth/users"));
+    expect(usersCalls.length).toBeGreaterThanOrEqual(2);
+    expect(usersCalls[usersCalls.length - 1]).not.toContain("is_active=true");
+  });
 });
