@@ -386,7 +386,18 @@ class UserBulkDeactivateView(APIView):
                         continue
 
                     if user.role == User.Role.ADMIN and user.is_active:
-                        other_active_admins = User.objects.filter(
+                        # select_for_update() here (not a plain read) closes a
+                        # TOCTOU race: without it, two concurrent requests each
+                        # deactivating a DIFFERENT admin in the same tenant could
+                        # both see the other as still active, both pass this
+                        # guard, and both commit — leaving zero active admins.
+                        # Locking every active-admin row means a second
+                        # transaction targeting a different admin blocks here
+                        # until the first commits/rolls back, then re-reads the
+                        # up-to-date count. Postgres-only guarantee (see
+                        # infra/docker-compose.yml, .github/workflows/ci.yml);
+                        # SQLite ignores FOR UPDATE, an existing limitation.
+                        other_active_admins = User.objects.select_for_update().filter(
                             tenant_id=tenant_id, role=User.Role.ADMIN, is_active=True
                         ).exclude(pk=user.pk)
                         if not other_active_admins.exists():
