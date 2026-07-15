@@ -40,32 +40,14 @@ resolve tenant from the event payload/envelope and use ``all_objects``, and
 keep the write + ``publish_event`` call in one atomic block.
 """
 
-from decimal import Decimal
+import logging
 
 from billing.models import FeeStructure, Invoice
 from django.db import transaction
 from suerp_common.inbox import idempotent
 from suerp_common.outbox import publish_event
 
-HOSTEL_FEE_AMOUNT = Decimal("5000.00")
-
-
-def _resolve_hostel_fee_amount(tenant_id, fee_structure_id) -> Decimal:
-    """Look up the warden-chosen FeeStructure's amount, falling back to the
-    hardcoded default when no fee_structure_id was passed (legacy direct-
-    allocate path — AllocateView/AllocateBulkView don't collect a fee choice
-    at all) or when the id doesn't resolve (deleted/cross-tenant/typo'd —
-    fail open to the old default rather than blocking invoice creation
-    entirely, since this consumer has no way to surface an error back to the
-    warden who already approved the request).
-    """
-    if not fee_structure_id:
-        return HOSTEL_FEE_AMOUNT
-
-    fee_structure = FeeStructure.all_objects.filter(
-        tenant_id=tenant_id, id=fee_structure_id
-    ).first()
-    return fee_structure.amount if fee_structure is not None else HOSTEL_FEE_AMOUNT
+logger = logging.getLogger(__name__)
 
 
 @idempotent
@@ -73,19 +55,32 @@ def handle_allocation_requested(event: dict) -> None:
     """Handle ``hostel.allocation.requested``: create a pending hostel Invoice.
 
     Expects ``event["payload"]`` to contain ``allocation_id``,
-    ``student_user_code``, ``room_id``, and (new) ``fee_structure_id``/
-    ``university_name`` — both optional, present only when the allocation
-    came from warden room-request approval rather than the direct
-    AllocateView/AllocateBulkView path.
+    ``student_user_code``, ``room_id``, ``fee_structure_id``, ``due_date``,
+    and ``university_name``. hostel-service's create_allocation() only ever
+    publishes this event when a fee was actually chosen — a direct/no-fee
+    allocation confirms synchronously in hostel-service and never publishes
+    this event at all, so every delivery here always carries a real
+    fee_structure_id/due_date pair.
     """
     tenant_id = event["tenant_id"]
     payload = event["payload"]
     student_user_code = payload["student_user_code"]
     allocation_id = payload["allocation_id"]
-    fee_structure_id = payload.get("fee_structure_id")
+    fee_structure_id = payload["fee_structure_id"]
+    due_date = payload.get("due_date")
     university_name = payload.get("university_name") or ""
 
-    amount = _resolve_hostel_fee_amount(tenant_id, fee_structure_id)
+    fee_structure = FeeStructure.all_objects.filter(tenant_id=tenant_id, id=fee_structure_id).first()
+    if fee_structure is None:
+        logger.warning(
+            "hostel.allocation.requested for unresolvable fee_structure_id=%s tenant_id=%s "
+            "allocation_id=%s — skipping invoice creation",
+            fee_structure_id,
+            tenant_id,
+            allocation_id,
+        )
+        return
+    amount = fee_structure.amount
 
     with transaction.atomic():
         invoice = Invoice.all_objects.create(
@@ -95,6 +90,7 @@ def handle_allocation_requested(event: dict) -> None:
             purpose="hostel",
             status=Invoice.Status.PENDING,
             university_name=university_name,
+            due_date=due_date,
         )
 
         publish_event(
