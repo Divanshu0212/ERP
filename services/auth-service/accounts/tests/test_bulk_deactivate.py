@@ -157,30 +157,37 @@ def test_bulk_deactivate_blocks_last_admin(client):
 
 
 def test_bulk_deactivate_last_admin_guard_uses_current_admin_count(client):
-    """Regression test for the last-admin guard's row-locking fix: the
-    active-admin count must reflect admins deactivated earlier in THIS
-    same request, not a stale snapshot taken before the loop started."""
+    """Regression test for the last-admin guard: the active-admin count
+    must reflect admins deactivated earlier in THIS same request, not a
+    stale snapshot taken before the loop started. Caller is a third admin
+    (not a target) so neither guard result is explained by self-delete —
+    and the caller is pre-deactivated so it doesn't itself keep A's guard
+    from firing (an active caller would always count as "another admin")."""
     inst = _make_institution()
-    admin_a, admin_token = _admin(client, inst)
-    admin_b, _ = _admin(client, inst, email="adminb@example.com")
+    admin_a, _token_a = _admin(client, inst)
+    admin_b, _token_b = _admin(client, inst, email="adminb@example.com")
+    caller_code, caller_token = _admin(client, inst, email="caller@example.com")
+    User.objects.filter(pk=caller_code).update(is_active=False)
 
-    # Single request deactivates B first, then (in the same request) tries
-    # to deactivate A — since B is now inactive, A IS the last admin and
-    # must be blocked, even though at request-start there were 2 admins.
+    # Single request: deactivate B first, then A, in the SAME request.
+    # After B is deactivated, A is the last remaining active admin (the
+    # caller is a THIRD admin, already inactive, so it isn't counted), so
+    # A must be blocked — proving the admin-count check sees B's
+    # deactivation from earlier in this same request, not a stale
+    # pre-loop snapshot.
     resp = client.post(
         "/api/v1/auth/users/bulk-delete/",
         {"user_codes": [admin_b, admin_a]},
         format="json",
-        HTTP_AUTHORIZATION=f"Bearer {admin_token}",
+        HTTP_AUTHORIZATION=f"Bearer {caller_token}",
     )
 
     assert resp.status_code == 200, resp.content
     data = resp.json()["data"]
-    # admin_b succeeds; admin_a is the caller's own account too, so it's
-    # blocked by self-delete rather than last-admin — but either guard
-    # firing proves the endpoint didn't leave zero active admins.
     assert {d["user_code"] for d in data["deactivated"]} == {admin_b}
-    assert {f["user_code"] for f in data["failed"]} == {admin_a}
+    assert data["failed"][0]["user_code"] == admin_a
+    assert "last active admin" in data["failed"][0]["error"].lower()
+    # A remains the sole active admin (blocked); B and the caller are inactive.
     assert User.objects.filter(tenant=inst, role=User.Role.ADMIN, is_active=True).count() == 1
 
 
