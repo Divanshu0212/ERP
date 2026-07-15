@@ -18,6 +18,7 @@ serialize on the row lock, so the second one observes the incremented
 import csv
 import io
 import uuid as uuid_lib
+from datetime import date
 
 import openpyxl
 import requests  # noqa: F401 -- test patch target: hostel.lookups shares this module object
@@ -491,6 +492,16 @@ class AllocateView(APIView):
 ALLOWED_EXTENSIONS = {"csv", "xlsx"}
 
 
+def _parse_due_date_or_none(raw: str):
+    """Parse a CSV/XLSX due_date cell (expected YYYY-MM-DD). Returns None if
+    unparseable, so the caller can distinguish "bad format" from "in the
+    past" with one parse instead of two."""
+    try:
+        return date.fromisoformat(raw)
+    except ValueError:
+        return None
+
+
 def _parse_rows(upload, extension) -> list[tuple[str, str, str, str]]:
     """Parse an uploaded CSV/XLSX into a list of
     (room_id, student_user_code, fee_structure_id_raw, due_date_raw) tuples.
@@ -591,12 +602,20 @@ class AllocateBulkView(APIView):
             allocation = None
             row_status = AllocationImportRow.Status.FAILED
 
+            parsed_due_date = _parse_due_date_or_none(due_date_raw) if due_date_raw else None
+
             if not room_id_raw or not student_user_code_raw:
                 error_message = "Row skipped: no user_code provided."
                 row_status = AllocationImportRow.Status.SKIPPED
                 skipped_count += 1
             elif bool(fee_structure_id_raw) != bool(due_date_raw):
                 error_message = "fee_structure_id and due_date must be given together, or neither."
+                fail_count += 1
+            elif due_date_raw and parsed_due_date is None:
+                error_message = f"Invalid due_date: {due_date_raw!r} (expected YYYY-MM-DD)."
+                fail_count += 1
+            elif due_date_raw and parsed_due_date <= timezone.now().date():
+                error_message = "due_date must be in the future."
                 fail_count += 1
             else:
                 try:
