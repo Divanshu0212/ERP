@@ -109,9 +109,9 @@ is stored in two places, matching the existing `university_name` /
 copy since there's no cross-service FK):
 
 - **hostel-service**: new `Allocation.due_date` (nullable
-  `DateTimeField`) — stamped when the allocation is created with a fee, so
+  `DateField`) — stamped when the allocation is created with a fee, so
   the periodic release task can check it without calling finance-service.
-- **finance-service**: new `Invoice.due_date` (nullable `DateTimeField`) —
+- **finance-service**: new `Invoice.due_date` (nullable `DateField`) —
   stamped by `handle_allocation_requested` when creating the invoice, so
   the student-facing UI can show "due by \<date\>" and the invoice itself
   carries its own deadline independent of hostel-service.
