@@ -133,7 +133,8 @@ class BlockListCreateView(ListCreateAPIView):
 
         try:
             warden = resolve_user_by_code(
-                serializer.validated_data["warden_user_code"], request.META.get("HTTP_AUTHORIZATION")
+                serializer.validated_data["warden_user_code"],
+                request.META.get("HTTP_AUTHORIZATION"),
             )
         except LookupFailed as exc:
             return fail(str(exc), status=400 if exc.reason == "not_found" else 502)
@@ -390,9 +391,7 @@ class RejectRoomRequestView(APIView):
         room_request.decided_on = timezone.now()
         room_request.decided_by = request.user.id
         room_request.rejection_reason = serializer.validated_data["rejection_reason"]
-        room_request.save(
-            update_fields=["status", "decided_on", "decided_by", "rejection_reason"]
-        )
+        room_request.save(update_fields=["status", "decided_on", "decided_by", "rejection_reason"])
 
         return ok(RoomRequestSerializer(room_request).data, message="Room request rejected.")
 
@@ -533,19 +532,19 @@ def _parse_rows(upload, extension) -> list[tuple[str, str, str, str]]:
     if "room_id" not in header or "student_user_code" not in header:
         raise ValueError("XLSX must have room_id and student_user_code columns.")
     col_idx = {col: header.index(col) if col in header else None for col in columns}
+
+    def _cell(record, col):
+        idx = col_idx[col]
+        if idx is None or idx >= len(record):
+            return ""
+        value = record[idx]
+        return str(value).strip() if value is not None else ""
+
     rows = []
     for record in sheet_rows[1:]:
         if record is None or all(c is None for c in record):
             continue
-
-        def _cell(col):
-            idx = col_idx[col]
-            if idx is None or idx >= len(record):
-                return ""
-            value = record[idx]
-            return str(value).strip() if value is not None else ""
-
-        rows.append(tuple(_cell(col) for col in columns))
+        rows.append(tuple(_cell(record, col) for col in columns))
     return rows
 
 
