@@ -402,6 +402,40 @@ pay through the same Razorpay checkout as fees.
 Faculty/exam and attendance endpoints 404 here — those are prototype/stub services (see
 [`docs/REMAINING_MODULES.md`](docs/REMAINING_MODULES.md) for what's fully built vs. stubbed).
 
+### Monitoring under load
+
+![Grafana — SU-ERP Services Overview](docs/screenshots/grafana-dashboard.png)
+
+The Grafana dashboard (`infra/grafana/dashboards/suerp-services.json`) during a real
+multi-tenant load run: **2,889 requests at ~9.8 req/s** driven from a client against the
+gateway across two tenants (NITJ + a freshly provisioned **IIT Ropar**), with
+**p50 10 ms / p95 34 ms** and **zero 5xx**. The dip in the middle is the services being
+rebuilt and restarted mid-run; traffic resumes cleanly after.
+
+The 4xx line is real signal, not noise: the load driver deliberately requests a
+non-existent allocation UUID on a fixed cadence so the error-rate panel has something to
+track.
+
+Two things the run surfaced, both the system behaving correctly:
+
+- **The gateway rate limiter works.** A first, unpaced attempt at ~500 req/s from one IP
+  was almost entirely rejected with `429` — nginx enforces 10 r/s per client IP
+  (burst 20), and 3 r/s on `/auth/login`. The load driver above is paced under that
+  ceiling, which is why its 429 count is zero.
+- **The auth lockout works.** A deliberate wrong-password worker tripped
+  auth-service's 5-failures-in-15-minutes account lockout, which is exactly its job.
+
+Start the monitoring stack alongside the app (it is behind its own compose profile, so it
+stays off by default):
+
+```sh
+docker compose -f infra/docker-compose.yml --profile observability up -d prometheus grafana
+```
+
+Prometheus at `http://localhost:9090` (all 14 targets healthy), Grafana at
+`http://localhost:3000` (admin/admin). Note that Grafana publishes `3000`, the same port
+as the Next.js dev server — run one at a time locally, or remap one of them.
+
 ---
 
 ## Multi-tenancy
@@ -525,9 +559,15 @@ the agreed design, kept here instead of a separate spec doc.
 
 ## Observability & CI
 
-- **Metrics:** each Django service exposes `/metrics` (via `django-prometheus`).
-  Prometheus (`infra/prometheus/`) scrapes all services; Grafana (`infra/grafana/`)
-  ships a dashboard for request rate, latency, error rate, and per-tenant request count.
+- **Metrics:** all 13 Django services expose `/metrics` (via `django-prometheus` —
+  `django_prometheus` in `INSTALLED_APPS`, the Before/After middleware pair, and
+  `path("", include("django_prometheus.urls"))`). ai-service is FastAPI and is not
+  scraped. Prometheus (`infra/prometheus/`) scrapes every Django service — 14 targets
+  including itself, all healthy; Grafana (`infra/grafana/`) ships a dashboard for request
+  rate, latency, error rate, and per-tenant request count — see
+  [Monitoring under load](#monitoring-under-load) for it running against real traffic.
+  Both sit behind the `observability` compose profile, so they stay off unless asked for:
+  `docker compose -f infra/docker-compose.yml --profile observability up -d prometheus grafana`.
   Prometheus at `http://localhost:9090`, Grafana at `http://localhost:3000`
   (admin/admin). Note: Grafana publishes `3000`, the same port as the Next.js dev
   server — run one at a time locally, or remap one of them.
