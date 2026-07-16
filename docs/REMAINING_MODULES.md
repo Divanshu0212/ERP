@@ -29,15 +29,15 @@ against what the codebase actually implements as of branch `phase-1-foundation`.
 | 6.6 | attendance | 🟡 Stub | tenant-isolated CRUD model | mark/summary/report endpoints, defaulter compute, `attendance.low_flagged`, dropout-risk ML |
 | 6.7 | exam | 🟡 Stub | tenant-isolated CRUD model | schedule/hall-ticket/marks/results, CGPA compute, `exam.result.published`, timetable CSP |
 | 6.8 | library | 🟡 Stub | tenant-isolated CRUD model | search/issue/return/reserve, fine calc, `overdue.flagged`, recommendation engine |
-| 6.9 | canteen | 🟡 Stub | tenant-isolated CRUD model | menu/order/token-queue, campus-wallet debit |
+| 6.9 | canteen | ✅ Built | MenuItem/Order/OrderItem; menu CRUD (price edit, availability toggle); cart pricing with snapshot `unit_price`; order status machine (placed→preparing→ready→completed / cancelled) with legal-transition guards; **simulated** swappable Razorpay checkout | campus-wallet debit, token-queue display, `order.placed`/`order.ready` events |
 | 6.10 | grievance | ✅ Built | Ticket/TicketComment; `create`→`grievance.created` (payload carries `raised_by`); `grievance.scored` consumer auto-escalates high/critical to warden | `EscalationLog` model (escalation is a status flip), `PATCH /status` endpoint |
 | 6.11 | notification | ✅ Built | per-user in-app inbox (JWT-`sub` scoped); mark-read; terminal fan-out consumer for `payment.success`/`allocation.confirmed`/`grievance.scored` | broadcast endpoint, templates, real email/SMS/push channels (in-app only) |
 | 6.12 | placement | 🟡 Stub | tenant-isolated CRUD model | drives/apply/matches, resume upload, shortlisting, resume–JD ML |
 | 6.13 | ai | ✅ Built (partial) | FastAPI; `/ai/sentiment` (VADER + keyword urgency); `/ai/chatbot/query` (TF-IDF intent routing); `grievance.created`→`grievance.scored` producer (wire-format verified) | `/ai/resume-match`, `/ai/attendance-risk`, `/ai/plagiarism-check` endpoints |
 | 6.14 | analytics | 🟡 Stub | tenant-isolated CRUD model | CQRS-lite event-consuming aggregate tables (attendance %, revenue, occupancy, bus utilization) |
 
-**Score:** 7 services fully built (auth, hostel, transport, finance, grievance, notification, ai),
-7 stubbed (student, attendance, exam, library, canteen, placement, analytics).
+**Score:** 8 services fully built (auth, hostel, transport, finance, grievance, notification, ai, canteen),
+6 stubbed (student, attendance, exam, library, placement, analytics).
 
 ---
 
