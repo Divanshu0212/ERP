@@ -16,8 +16,11 @@ def institution(db):
 @pytest.fixture
 def student_user(db, institution):
     return User.objects.create_user(
-        tenant=institution, email="stu@profiletest.edu", password="pw12345678",
-        role=User.Role.STUDENT, user_code="STU-100",
+        tenant=institution,
+        email="stu@profiletest.edu",
+        password="pw12345678",
+        role=User.Role.STUDENT,
+        user_code="STU-100",
     )
 
 
@@ -33,9 +36,7 @@ def _login(client, institution, email, password):
 def test_get_own_profile_empty_by_default(db, institution, student_user):
     client = APIClient()
     token = _login(client, institution, "stu@profiletest.edu", "pw12345678")
-    resp = client.get(
-        "/api/v1/auth/users/me/profile/", HTTP_AUTHORIZATION=f"Bearer {token}"
-    )
+    resp = client.get("/api/v1/auth/users/me/profile/", HTTP_AUTHORIZATION=f"Bearer {token}")
     assert resp.status_code == 200
     assert resp.json()["data"]["phone"] == ""
 
@@ -57,21 +58,24 @@ def test_patch_own_profile(db, institution, student_user):
 def test_superadmin_has_no_profile_endpoint_access(db):
     institution = Institution.objects.create(slug="platform-profile", name="Platform")
     User.objects.create_superuser(
-        tenant=institution, email="root@platformprofile.edu", password="pw12345678",
+        tenant=institution,
+        email="root@platformprofile.edu",
+        password="pw12345678",
         role=User.Role.SUPERADMIN,
     )
     client = APIClient()
     token = _login(client, institution, "root@platformprofile.edu", "pw12345678")
-    resp = client.get(
-        "/api/v1/auth/users/me/profile/", HTTP_AUTHORIZATION=f"Bearer {token}"
-    )
+    resp = client.get("/api/v1/auth/users/me/profile/", HTTP_AUTHORIZATION=f"Bearer {token}")
     assert resp.status_code == 403
 
 
 def test_admin_can_view_another_users_profile(db, institution, student_user):
-    admin = User.objects.create_user(
-        tenant=institution, email="admin@profiletest.edu", password="pw12345678",
-        role=User.Role.ADMIN, user_code="ADM-100",
+    User.objects.create_user(
+        tenant=institution,
+        email="admin@profiletest.edu",
+        password="pw12345678",
+        role=User.Role.ADMIN,
+        user_code="ADM-100",
     )
     client = APIClient()
     token = _login(client, institution, "admin@profiletest.edu", "pw12345678")
@@ -85,8 +89,11 @@ def test_admin_can_view_another_users_profile(db, institution, student_user):
 
 def test_student_cannot_view_another_users_profile(db, institution, student_user):
     other_student = User.objects.create_user(
-        tenant=institution, email="other@profiletest.edu", password="pw12345678",
-        role=User.Role.STUDENT, user_code="STU-200",
+        tenant=institution,
+        email="other@profiletest.edu",
+        password="pw12345678",
+        role=User.Role.STUDENT,
+        user_code="STU-200",
     )
     client = APIClient()
     token = _login(client, institution, "stu@profiletest.edu", "pw12345678")
