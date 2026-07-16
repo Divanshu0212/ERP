@@ -36,8 +36,12 @@ def _event(tenant_id, **payload_overrides):
         "university_name": "",
     }
     payload.update(payload_overrides)
-    return {"event_id": str(uuid.uuid4()), "type": "hostel.allocation.requested",
-             "tenant_id": str(tenant_id), "payload": payload}
+    return {
+        "event_id": str(uuid.uuid4()),
+        "type": "hostel.allocation.requested",
+        "tenant_id": str(tenant_id),
+        "payload": payload,
+    }
 
 
 def test_uses_fee_structure_amount_and_stamps_university_name():

@@ -36,9 +36,10 @@ class RegisterSerializer(serializers.Serializer):
         email = User.objects.normalize_email(attrs["email"])
         if institution and User.objects.filter(tenant=institution, email=email).exists():
             raise serializers.ValidationError({"email": "A user with this email already exists."})
-        if institution and User.objects.filter(
-            tenant=institution, user_code=attrs["user_code"]
-        ).exists():
+        if (
+            institution
+            and User.objects.filter(tenant=institution, user_code=attrs["user_code"]).exists()
+        ):
             raise serializers.ValidationError(
                 {"user_code": "A user with this user_code already exists."}
             )
@@ -207,9 +208,10 @@ class SuperadminCreateAdminSerializer(serializers.Serializer):
         email = User.objects.normalize_email(attrs["email"])
         if institution and User.objects.filter(tenant=institution, email=email).exists():
             raise serializers.ValidationError({"email": "A user with this email already exists."})
-        if institution and User.objects.filter(
-            tenant=institution, user_code=attrs["user_code"]
-        ).exists():
+        if (
+            institution
+            and User.objects.filter(tenant=institution, user_code=attrs["user_code"]).exists()
+        ):
             raise serializers.ValidationError(
                 {"user_code": "A user with this user_code already exists."}
             )
@@ -248,12 +250,8 @@ class UserProfileSerializer(serializers.Serializer):
     address = serializers.CharField(required=False, allow_blank=True)
     date_of_birth = serializers.DateField(required=False, allow_null=True)
     gender = serializers.CharField(max_length=20, required=False, allow_blank=True)
-    emergency_contact_name = serializers.CharField(
-        max_length=255, required=False, allow_blank=True
-    )
-    emergency_contact_phone = serializers.CharField(
-        max_length=20, required=False, allow_blank=True
-    )
+    emergency_contact_name = serializers.CharField(max_length=255, required=False, allow_blank=True)
+    emergency_contact_phone = serializers.CharField(max_length=20, required=False, allow_blank=True)
     blood_group = serializers.CharField(max_length=5, required=False, allow_blank=True)
     profile_photo_url = serializers.URLField(required=False, allow_blank=True)
     updated_at = serializers.DateTimeField(read_only=True)

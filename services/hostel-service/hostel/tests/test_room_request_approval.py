@@ -99,7 +99,8 @@ def test_double_approve_does_not_create_second_allocation(mock_get):
     assert second.status_code == 400, second.content
 
     assert (
-        Allocation.all_objects.filter(student_user_code=student_id, tenant_id=tenant_id).count() == 1
+        Allocation.all_objects.filter(student_user_code=student_id, tenant_id=tenant_id).count()
+        == 1
     )
 
 

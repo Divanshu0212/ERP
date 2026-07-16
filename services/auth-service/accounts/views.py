@@ -306,11 +306,13 @@ class UserBulkCreateView(APIView):
                 },
             )
             if not serializer.is_valid():
-                failed.append({
-                    "row": index,
-                    "email": row.get("email", "") if isinstance(row, dict) else "",
-                    "error": _first_error_message(serializer.errors),
-                })
+                failed.append(
+                    {
+                        "row": index,
+                        "email": row.get("email", "") if isinstance(row, dict) else "",
+                        "error": _first_error_message(serializer.errors),
+                    }
+                )
                 continue
 
             with transaction.atomic():
@@ -379,15 +381,15 @@ class UserBulkDeactivateView(APIView):
         for user_code in user_codes:
             try:
                 with transaction.atomic():
-                    user = User.objects.select_for_update().get(
-                        pk=user_code, tenant_id=tenant_id
-                    )
+                    user = User.objects.select_for_update().get(pk=user_code, tenant_id=tenant_id)
 
                     if user.user_code == caller_code:
-                        failed.append({
-                            "user_code": user_code,
-                            "error": "Cannot deactivate your own account.",
-                        })
+                        failed.append(
+                            {
+                                "user_code": user_code,
+                                "error": "Cannot deactivate your own account.",
+                            }
+                        )
                         continue
 
                     if user.role == User.Role.ADMIN and user.is_active:
@@ -402,14 +404,18 @@ class UserBulkDeactivateView(APIView):
                         # up-to-date count. Postgres-only guarantee (see
                         # infra/docker-compose.yml, .github/workflows/ci.yml);
                         # SQLite ignores FOR UPDATE, an existing limitation.
-                        other_active_admins = User.objects.select_for_update().filter(
-                            tenant_id=tenant_id, role=User.Role.ADMIN, is_active=True
-                        ).exclude(pk=user.pk)
+                        other_active_admins = (
+                            User.objects.select_for_update()
+                            .filter(tenant_id=tenant_id, role=User.Role.ADMIN, is_active=True)
+                            .exclude(pk=user.pk)
+                        )
                         if not other_active_admins.exists():
-                            failed.append({
-                                "user_code": user_code,
-                                "error": "Cannot deactivate the last active admin.",
-                            })
+                            failed.append(
+                                {
+                                    "user_code": user_code,
+                                    "error": "Cannot deactivate the last active admin.",
+                                }
+                            )
                             continue
 
                     user.is_active = False
@@ -429,10 +435,12 @@ class UserBulkDeactivateView(APIView):
                 # via the other_active_admins lock above — a circular wait.
                 # Surface it as a per-row failure instead of a 500 so the
                 # rest of the batch still gets a clean partial result.
-                failed.append({
-                    "user_code": user_code,
-                    "error": "Could not process due to a concurrent update; please retry.",
-                })
+                failed.append(
+                    {
+                        "user_code": user_code,
+                        "error": "Could not process due to a concurrent update; please retry.",
+                    }
+                )
                 continue
 
             deactivated.append({"user_code": user.user_code, "email": user.email})

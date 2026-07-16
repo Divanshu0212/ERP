@@ -31,8 +31,12 @@ pytestmark = pytest.mark.django_db
 
 
 def _allocation_requested_event(
-    tenant_id, student_user_code=None, allocation_id=None, room_id=None,
-    fee_structure_id=None, due_date=None,
+    tenant_id,
+    student_user_code=None,
+    allocation_id=None,
+    room_id=None,
+    fee_structure_id=None,
+    due_date=None,
 ):
     payload = {
         "allocation_id": str(allocation_id or uuid.uuid4()),

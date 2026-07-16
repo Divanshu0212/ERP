@@ -28,7 +28,11 @@ def _clear_cache():
 
 
 def _make_token(tenant_id, user_id=None, role="student"):
-    claims = {"sub": user_id or f"STU-{uuid.uuid4().hex[:8]}", "role": role, "tenant": str(tenant_id)}
+    claims = {
+        "sub": user_id or f"STU-{uuid.uuid4().hex[:8]}",
+        "role": role,
+        "tenant": str(tenant_id),
+    }
     return jwt.encode(claims, settings.JWT_SIGNING_KEY, algorithm="HS256")
 
 

@@ -18,8 +18,11 @@ def institution(db):
 @pytest.fixture
 def admin_user(db, institution):
     return User.objects.create_user(
-        tenant=institution, email="admin@codelookup.edu", password="pw12345678",
-        role=User.Role.ADMIN, user_code="ADM-001",
+        tenant=institution,
+        email="admin@codelookup.edu",
+        password="pw12345678",
+        role=User.Role.ADMIN,
+        user_code="ADM-001",
     )
 
 
@@ -36,8 +39,11 @@ def test_resolve_by_code_success(db, institution, admin_user):
     client = APIClient()
     token = _login(client, institution, "admin@codelookup.edu", "pw12345678")
     User.objects.create_user(
-        tenant=institution, email="stu@codelookup.edu", password="pw12345678",
-        role=User.Role.STUDENT, user_code="STU-777",
+        tenant=institution,
+        email="stu@codelookup.edu",
+        password="pw12345678",
+        role=User.Role.STUDENT,
+        user_code="STU-777",
     )
     resp = client.get(
         "/api/v1/auth/users/by-code/",
@@ -74,8 +80,11 @@ def test_resolve_by_code_requires_query_param(db, institution, admin_user):
 def test_resolve_by_code_is_tenant_scoped(db, institution, admin_user):
     other_institution = Institution.objects.create(slug="other-code-lookup", name="Other U")
     User.objects.create_user(
-        tenant=other_institution, email="stu@othercodelookup.edu", password="pw12345678",
-        role=User.Role.STUDENT, user_code="STU-777",
+        tenant=other_institution,
+        email="stu@othercodelookup.edu",
+        password="pw12345678",
+        role=User.Role.STUDENT,
+        user_code="STU-777",
     )
     client = APIClient()
     token = _login(client, institution, "admin@codelookup.edu", "pw12345678")
@@ -89,8 +98,11 @@ def test_resolve_by_code_is_tenant_scoped(db, institution, admin_user):
 
 def test_resolve_by_code_forbidden_for_student(db, institution, admin_user):
     User.objects.create_user(
-        tenant=institution, email="stu@codelookup.edu", password="pw12345678",
-        role=User.Role.STUDENT, user_code="STU-777",
+        tenant=institution,
+        email="stu@codelookup.edu",
+        password="pw12345678",
+        role=User.Role.STUDENT,
+        user_code="STU-777",
     )
     client = APIClient()
     token = _login(client, institution, "stu@codelookup.edu", "pw12345678")

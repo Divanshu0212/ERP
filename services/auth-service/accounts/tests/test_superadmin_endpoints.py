@@ -188,9 +188,7 @@ def test_superadmin_creates_admin_in_target_institution_and_emits_one_event(clie
     assert user.role == User.Role.ADMIN
     assert user.check_password("n3w-passw0rd") is True
 
-    events = OutboxEvent.objects.filter(
-        type="user.registered", payload__user_code=user.user_code
-    )
+    events = OutboxEvent.objects.filter(type="user.registered", payload__user_code=user.user_code)
     assert events.count() == 1
     assert str(events.first().tenant_id) == str(target.id)
     assert events.first().payload["role"] == User.Role.ADMIN

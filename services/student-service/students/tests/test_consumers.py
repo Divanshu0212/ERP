@@ -12,8 +12,15 @@ from suerp_common.outbox import publish_event
 pytestmark = pytest.mark.django_db
 
 
-def _event(event_id=None, role="student", tenant_id=None, user_code="STU-1",
-           department="CS", batch="2026", semester=2):
+def _event(
+    event_id=None,
+    role="student",
+    tenant_id=None,
+    user_code="STU-1",
+    department="CS",
+    batch="2026",
+    semester=2,
+):
     return {
         "event_id": str(event_id or uuid.uuid4()),
         "type": "user.registered",
@@ -54,7 +61,10 @@ def test_idempotent_on_replay_of_same_event_id():
     handle_user_registered(event)
     handle_user_registered(event)  # same event_id delivered twice
 
-    assert StudentProfile.all_objects.filter(user_code="STU-1", tenant_id=event["tenant_id"]).count() == 1
+    assert (
+        StudentProfile.all_objects.filter(user_code="STU-1", tenant_id=event["tenant_id"]).count()
+        == 1
+    )
     assert ProcessedEvent.objects.filter(event_id=event["event_id"]).count() == 1
 
 

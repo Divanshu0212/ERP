@@ -59,8 +59,14 @@ def _admin_token(client, institution, email="admin@example.com"):
     return _token(client, institution, email)
 
 
-def _row(email="stu1@example.com", user_code="STU-0001", password="n3w-passw0rd",
-         department="CS", batch="2026", semester=1):
+def _row(
+    email="stu1@example.com",
+    user_code="STU-0001",
+    password="n3w-passw0rd",
+    department="CS",
+    batch="2026",
+    semester=1,
+):
     return {
         "email": email,
         "user_code": user_code,
@@ -77,10 +83,12 @@ def test_bulk_create_all_success(client):
 
     resp = client.post(
         "/api/v1/auth/users/bulk/",
-        {"rows": [
-            _row(email="a@example.com", user_code="STU-A"),
-            _row(email="b@example.com", user_code="STU-B"),
-        ]},
+        {
+            "rows": [
+                _row(email="a@example.com", user_code="STU-A"),
+                _row(email="b@example.com", user_code="STU-B"),
+            ]
+        },
         format="json",
         HTTP_AUTHORIZATION=f"Bearer {admin_token}",
     )
@@ -107,15 +115,19 @@ def test_bulk_create_all_success(client):
 def test_bulk_create_mixed_success_and_failure_does_not_abort_batch(client):
     inst = _make_institution()
     admin_token = _admin_token(client, inst)
-    _register(client, inst, email="existing@example.com", role=User.Role.STUDENT, user_code="EXIST-1")
+    _register(
+        client, inst, email="existing@example.com", role=User.Role.STUDENT, user_code="EXIST-1"
+    )
 
     resp = client.post(
         "/api/v1/auth/users/bulk/",
-        {"rows": [
-            _row(email="good@example.com", user_code="STU-GOOD"),
-            _row(email="existing@example.com", user_code="STU-DUPE-EMAIL"),  # dup email vs DB
-            _row(email="dupcode@example.com", user_code="EXIST-1"),  # dup user_code vs DB
-        ]},
+        {
+            "rows": [
+                _row(email="good@example.com", user_code="STU-GOOD"),
+                _row(email="existing@example.com", user_code="STU-DUPE-EMAIL"),  # dup email vs DB
+                _row(email="dupcode@example.com", user_code="EXIST-1"),  # dup user_code vs DB
+            ]
+        },
         format="json",
         HTTP_AUTHORIZATION=f"Bearer {admin_token}",
     )
@@ -137,10 +149,12 @@ def test_bulk_create_rejects_duplicate_within_same_batch(client):
 
     resp = client.post(
         "/api/v1/auth/users/bulk/",
-        {"rows": [
-            _row(email="same@example.com", user_code="STU-SAME-1"),
-            _row(email="same@example.com", user_code="STU-SAME-2"),
-        ]},
+        {
+            "rows": [
+                _row(email="same@example.com", user_code="STU-SAME-1"),
+                _row(email="same@example.com", user_code="STU-SAME-2"),
+            ]
+        },
         format="json",
         HTTP_AUTHORIZATION=f"Bearer {admin_token}",
     )

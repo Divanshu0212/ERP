@@ -111,7 +111,10 @@ def test_order_list_is_role_scoped():
 def test_status_transition_valid_and_invalid():
     tenant_id = uuid.uuid4()
     order = Order.all_objects.create(
-        tenant_id=tenant_id, student_user_code=f"STU{uuid.uuid4().hex[:27]}", total="10.00", status="placed"
+        tenant_id=tenant_id,
+        student_user_code=f"STU{uuid.uuid4().hex[:27]}",
+        total="10.00",
+        status="placed",
     )
     owner = _client(tenant_id, role="canteen_owner")
     url = f"{ORDERS_ENDPOINT}{order.id}/status/"
@@ -129,7 +132,10 @@ def test_status_transition_valid_and_invalid():
 def test_student_cannot_change_status():
     tenant_id = uuid.uuid4()
     order = Order.all_objects.create(
-        tenant_id=tenant_id, student_user_code=f"STU{uuid.uuid4().hex[:27]}", total="10.00", status="placed"
+        tenant_id=tenant_id,
+        student_user_code=f"STU{uuid.uuid4().hex[:27]}",
+        total="10.00",
+        status="placed",
     )
     resp = _client(tenant_id, role="student").patch(
         f"{ORDERS_ENDPOINT}{order.id}/status/", {"status": "preparing"}, format="json"

@@ -71,9 +71,7 @@ class Invoice(TenantModel):
     class Meta:
         indexes = [
             models.Index(fields=["tenant_id", "status"], name="invoice_tenant_status"),
-            models.Index(
-                fields=["tenant_id", "student_user_code"], name="invoice_tenant_student"
-            ),
+            models.Index(fields=["tenant_id", "student_user_code"], name="invoice_tenant_student"),
         ]
 
     def __str__(self):

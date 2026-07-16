@@ -75,12 +75,14 @@ def handle_payment_success(event: dict) -> None:
         if created:
             logger.info(
                 "Activated new transport Pass for student=%s tenant=%s",
-                student_user_code, tenant_id,
+                student_user_code,
+                tenant_id,
             )
         else:
             logger.info(
                 "Reactivated transport Pass for student=%s tenant=%s",
-                student_user_code, tenant_id,
+                student_user_code,
+                tenant_id,
             )
 
 
