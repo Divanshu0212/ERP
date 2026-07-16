@@ -26,7 +26,9 @@ class Command(BaseCommand):
         parser.add_argument("--name", required=True, help="Institution display name.")
         parser.add_argument("--admin-email", required=True, help="First admin's email.")
         parser.add_argument("--admin-password", required=True, help="First admin's password.")
-        parser.add_argument("--admin-user-code", required=True, help="user_code for the institution's first admin")
+        parser.add_argument(
+            "--admin-user-code", required=True, help="user_code for the institution's first admin"
+        )
 
     def handle(self, *args, **options):
         slug = options["slug"]
@@ -60,6 +62,8 @@ class Command(BaseCommand):
                     role=User.Role.ADMIN,
                     user_code=admin_user_code,
                 )
-                self.stdout.write(self.style.SUCCESS(f"Created admin {admin_email} ({admin.user_code})."))
+                self.stdout.write(
+                    self.style.SUCCESS(f"Created admin {admin_email} ({admin.user_code}).")
+                )
 
         self.stdout.write(f"institution_id={institution.id} admin_id={admin.user_code}")

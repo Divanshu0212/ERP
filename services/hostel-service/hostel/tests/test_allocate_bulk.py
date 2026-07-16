@@ -110,7 +110,11 @@ def test_mixed_success_and_failure(mock_resolve):
     def resolve_side_effect(user_code, auth):
         if user_code == "STU-UNKNOWN":
             raise LookupFailed("not_found", "No user found.")
-        return {"user_code": user_code, "email": f"{user_code.lower()}@example.com", "role": "student"}
+        return {
+            "user_code": user_code,
+            "email": f"{user_code.lower()}@example.com",
+            "role": "student",
+        }
 
     mock_resolve.side_effect = resolve_side_effect
     client = _auth_client(tenant_id, role="warden")
@@ -232,7 +236,9 @@ def test_same_student_twice_in_batch_fails_second_row_not_whole_batch(mock_resol
     assert rows[1].status == "failed"
     assert "already holds an active allocation" in rows[1].error_message.lower()
 
-    assert Allocation.all_objects.filter(tenant_id=tenant_id, student_user_code="STU-DUP").count() == 1
+    assert (
+        Allocation.all_objects.filter(tenant_id=tenant_id, student_user_code="STU-DUP").count() == 1
+    )
     room2.refresh_from_db()
     assert room2.occupied_count == 0  # failed row's seat reservation rolled back
 

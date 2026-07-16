@@ -58,14 +58,10 @@ def test_duplicate_pending_request_returns_400():
     student_id = f"STU-{uuid.uuid4().hex[:8]}"
     client = _auth_client(tenant_id, role="student", user_id=student_id)
 
-    first = client.post(
-        "/api/v1/hostel/room-requests", {"room_id": str(room.id)}, format="json"
-    )
+    first = client.post("/api/v1/hostel/room-requests", {"room_id": str(room.id)}, format="json")
     assert first.status_code == 201, first.content
 
-    second = client.post(
-        "/api/v1/hostel/room-requests", {"room_id": str(room.id)}, format="json"
-    )
+    second = client.post("/api/v1/hostel/room-requests", {"room_id": str(room.id)}, format="json")
     assert second.status_code == 400, second.content
     assert RoomRequest.all_objects.filter(student_user_code=student_id, room=room).count() == 1
 
@@ -84,7 +80,11 @@ def test_student_lists_only_own_requests():
 
     response = client_a.get("/api/v1/hostel/room-requests/mine")
     assert response.status_code == 200
-    items = response.json()["data"]["results"] if "results" in response.json()["data"] else response.json()["data"]
+    items = (
+        response.json()["data"]["results"]
+        if "results" in response.json()["data"]
+        else response.json()["data"]
+    )
     assert len(items) == 1
 
 
