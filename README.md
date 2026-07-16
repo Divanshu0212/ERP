@@ -21,6 +21,7 @@ rooms, pay fees, raise grievances, and track their records — all through one w
 - [Demo 1 — the hostel saga](#demo-1--the-hostel-saga-hostel--finance--notification)
 - [Demo 2 — the ML grievance escalation](#demo-2--the-ml-grievance-escalation-grievance--ai--notification)
 - [Screenshots](#screenshots)
+- [Correctness under adversarial conditions](#correctness-under-adversarial-conditions)
 - [Multi-tenancy](#multi-tenancy)
 - [Zero-trust identity](#zero-trust-identity)
 - [Event model](#event-model)
@@ -435,6 +436,74 @@ docker compose -f infra/docker-compose.yml --profile observability up -d prometh
 Prometheus at `http://localhost:9090` (all 14 targets healthy), Grafana at
 `http://localhost:3000` (admin/admin). Note that Grafana publishes `3000`, the same port
 as the Next.js dev server — run one at a time locally, or remap one of them.
+
+---
+
+## Correctness under adversarial conditions
+
+Throughput on a laptop proves little. What this system is actually built to survive is
+concurrency, redelivery, and infrastructure failure — so those are what it's tested for.
+Each claim below maps to something runnable, not a diagram.
+
+### Race safety — 50 threads, one seat
+
+```sh
+make test-concurrency
+```
+
+`hostel/tests/test_concurrency.py` runs real OS threads against **real PostgreSQL** (not
+the SQLite fallback, where `select_for_update()` is a no-op and a green test would prove
+nothing — it skips instead of passing vacuously) using `TransactionTestCase`, so every
+thread gets its own committed connection:
+
+| Scenario | Guarantee |
+| --- | --- |
+| 50 students race for the **last** seat | exactly **1** wins, 49 clean `RoomFullError`s, room lands at `2/2` |
+| 30 students, 3 free seats | exactly **3** win — never over-allocated |
+| 1 student fires 20 concurrent requests | exactly **1** allocation, capacity consumed once |
+| Two tenants allocate concurrently | 1 winner each, zero cross-tenant leakage |
+
+The test is load-bearing, not decorative: with `select_for_update()` neutered in-memory,
+the last-seat race reproduces the bug — **3 students win the same seat and the room
+over-allocates**. That failure is what the lock in `hostel/services.py` prevents.
+
+### Broker outage mid-saga — the outbox earns its keep
+
+```sh
+make chaos          # ./scripts/chaos_broker_outage.sh
+```
+
+Kills RabbitMQ in the middle of a live allocation saga and asserts recovery:
+
+```
+[1] killing RabbitMQ mid-flight
+  ✓ RabbitMQ is DOWN
+[2] allocating a seat with NO broker (the write must still succeed)
+  ✓ HTTP 201 — allocation created with the broker DOWN
+  ✓ event is SAFE in the outbox, unpublished: backlog 0 -> 1
+[3] bringing RabbitMQ back
+  ✓ RabbitMQ is UP and healthy
+[4] waiting for the outbox to drain by itself (beat runs every 5s)
+  ✓ backlog drained back to 0 — no manual replay, no lost events
+[5] confirming the downstream saga step ran
+  ✓ finance consumed the recovered event and raised an invoice for 11000.00
+```
+
+This is the **dual-write problem**, demonstrated rather than asserted. Publishing inside
+the request handler would have dropped that event the moment the broker died, wedging the
+saga with a seat reserved and no invoice. Because `publish_event()` only inserts an outbox
+row inside `transaction.atomic()`, the state change and the event commit together — a dead
+broker can't fail the user's request or lose the event.
+
+### Already covered by the unit suite
+
+The hard distributed-systems cases are tested in `hostel/tests/test_saga.py`:
+
+- **Out-of-order correlation** — `payment.success` arriving *before* `invoice.created`
+  still confirms the seat (and the same for the failure/release path).
+- **Idempotency** — the same `event_id` redelivered confirms once and emits one event.
+- **Timeout compensation never releases a paid seat** — including the paid-but-uncorrelated
+  case, which is the subtle one.
 
 ---
 
