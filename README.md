@@ -312,53 +312,77 @@ curl -sX POST localhost:8080/api/v1/ai/sentiment \
 
 ## Screenshots
 
-Captured live against a seeded institution — **PDPM IIITDMJ** (`pdpmiiitdmj`), provisioned
-end-to-end through the superadmin console with Indian-named staff and students, real hostel
-blocks/rooms, a fee structure, room requests, approvals, payments, and a verified receipt.
+Captured live (light mode) against a seeded institution — **NITJ** (`nitj`,
+`admin@nitj.in`), provisioned end-to-end through the superadmin console with Indian-named
+staff and students, real hostel blocks/rooms, fee structures, room requests, approvals,
+payments, and a verified receipt.
+
+### Sign in
+
+![Login](docs/screenshots/login.png)
+
+Tenant-scoped sign-in: institution slug + email + password. The slug selects the tenant;
+every downstream request is isolated to it by the JWT `tenant` claim.
 
 ### Superadmin — institution provisioning
 
 ![Superadmin console](docs/screenshots/superadmin-dashboard.png)
 
-Cross-tenant: creates institutions and their first admin. PDPM IIITDMJ shown in the list,
-provisioned by this exact flow.
+Cross-tenant, platform-scoped: creates institutions and their first admin. Both seeded
+tenants (NITJ, PDPM IIITDMJ) shown in the list, provisioned by this exact flow.
 
 ### Admin — users, fee structures, hostel setup
 
 ![Admin dashboard](docs/screenshots/admin-dashboard.png)
 
-Roster of every seeded user (admin, warden, faculty, driver, canteen owner, 10 students),
-the fee-structure CRUD form, hostel blocks (Kabir Bhawan, Meera Bhawan) and their rooms.
+Live tenant counters (users, invoices, allocations, tickets), the invoice and
+fee-structure CRUD forms, the full user roster (admin, warden, faculty, driver, canteen
+owner, students), hostel blocks (Aryabhatta, Ramanujan, Kalpana Chawla) and their rooms.
 
-### Warden — approval queue and bulk allocation
+![Admin users](docs/screenshots/admin-users.png)
+
+Every user in the tenant with an "include inactive" filter and multi-select **bulk
+deactivate** (soft-delete). Self-delete and removing the last active admin are blocked
+server-side.
+
+![Admin add students](docs/screenshots/admin-add-students.png)
+
+Single-add form plus CSV bulk-create for onboarding students in one shot.
+
+### Warden — allocation, bulk import, approvals
 
 ![Warden dashboard](docs/screenshots/warden-dashboard.png)
 
-Pending room requests with a fee picker (Approve/Reject), and the confirmed/pending
-allocations feeding in from the saga.
-
-![Warden bulk upload](docs/screenshots/warden-bulk-upload.png)
-
-A real bulk-CSV import: 6 succeeded, 0 failed, **1 skipped** (blank `student_user_code`
-row correctly logged as skipped rather than a failure).
+One console for the warden's whole workflow: create a single allocation (optionally with a
+fee structure + due date), **bulk allocate from CSV/XLSX** with a downloadable
+available-rooms template, **import logs** (note the rows correctly logged as *skipped*
+rather than failed), the pending room-request approval queue, live pending/confirmed
+allocations feeding in from the saga, and escalated grievances.
 
 ### Student — request, pay, download receipt
 
 ![Student dashboard](docs/screenshots/student-dashboard.png)
 
-Room request submitted and approved, invoices (one pending, two paid with a **Download
-receipt** action), and real notifications from the saga (`Payment successful`,
-`Hostel room confirmed`).
+Fees & invoices (pending with a **Pay** action, paid with **Download receipt**), room
+request submitted and **approved** (Ramanujan-101), real saga/grievance notifications, and
+the grievance entry point.
 
-![Student fees panel](docs/screenshots/student-fees-receipts.png)
+![Student — pay & confirm](docs/screenshots/student-saga-demo.png)
+
+The hostel saga walkthrough: allocate → invoice → pay → confirm, order-independent.
+
+![Student — raise grievance](docs/screenshots/student-escalation-demo.png)
+
+The ML escalation walkthrough: a grievance scored by the AI service, high/critical tickets
+auto-escalated to the warden.
 
 ### Receipt verification
 
 ![Receipt verification](docs/screenshots/verify-receipt.png)
 
 The QR on a downloaded PDF receipt links here — warden/admin-only, HMAC-verified,
-tamper-evident. Shown mid-flow: a real receipt for Aarav Singh's hostel payment,
-scanned and confirmed valid.
+tamper-evident. Shown mid-flow: a real NITJ receipt (`RCPT-D16CF940CC3F`, hostel, ₹5000)
+scanned and confirmed **valid**.
 
 ### Other roles
 
@@ -366,7 +390,7 @@ scanned and confirmed valid.
 | --- | --- | --- |
 | ![Faculty](docs/screenshots/faculty-dashboard.png) | ![Driver](docs/screenshots/driver-dashboard.png) | ![Canteen owner](docs/screenshots/canteen-owner-dashboard.png) |
 
-Faculty/exam endpoints 404 here — those are prototype/stub services (see
+Faculty/exam and attendance endpoints 404 here — those are prototype/stub services (see
 [`docs/REMAINING_MODULES.md`](docs/REMAINING_MODULES.md) for what's fully built vs. stubbed).
 
 ---
