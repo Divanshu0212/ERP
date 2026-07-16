@@ -35,6 +35,7 @@ RABBITMQ_URL = env("RABBITMQ_URL", default="amqp://guest:guest@rabbitmq:5672/")
 # --- Applications -----------------------------------------------------------
 
 INSTALLED_APPS = [
+    "django_prometheus",
     "django.contrib.contenttypes",
     "django.contrib.auth",
     "rest_framework",
@@ -43,11 +44,13 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
+    "django_prometheus.middleware.PrometheusBeforeMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "django.middleware.common.CommonMiddleware",
     # Resolves the active tenant (best-effort JWT decode, subdomain fallback)
     # in its pre-phase, before DRF authentication runs.
     "suerp_common.tenancy.TenantMiddleware",
+    "django_prometheus.middleware.PrometheusAfterMiddleware",
 ]
 
 ROOT_URLCONF = "config.urls"

@@ -5,6 +5,7 @@ dj-database-url
 psycopg[binary]
 razorpay
 gunicorn
+django-prometheus
 -e ../../shared/libs/suerp_common
 
 # Test tooling

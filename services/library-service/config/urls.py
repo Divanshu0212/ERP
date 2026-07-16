@@ -4,4 +4,5 @@ from django.urls import include, path
 
 urlpatterns = [
     path("api/v1/books/", include("library.urls")),
+    path("", include("django_prometheus.urls")),
 ]
