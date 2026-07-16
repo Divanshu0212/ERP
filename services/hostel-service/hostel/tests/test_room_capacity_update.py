@@ -19,9 +19,7 @@ def test_admin_increases_capacity():
     room = _make_room(tenant_id, capacity=2, occupied_count=1, room_no="101")
     client = _auth_client(tenant_id, role="admin")
 
-    response = client.patch(
-        f"/api/v1/hostel/rooms/{room.id}", {"capacity": 4}, format="json"
-    )
+    response = client.patch(f"/api/v1/hostel/rooms/{room.id}", {"capacity": 4}, format="json")
 
     assert response.status_code == 200, response.content
     body = response.json()["data"]
@@ -36,9 +34,7 @@ def test_admin_decreases_capacity_above_occupied_count():
     room = _make_room(tenant_id, capacity=4, occupied_count=1, room_no="101")
     client = _auth_client(tenant_id, role="admin")
 
-    response = client.patch(
-        f"/api/v1/hostel/rooms/{room.id}", {"capacity": 2}, format="json"
-    )
+    response = client.patch(f"/api/v1/hostel/rooms/{room.id}", {"capacity": 2}, format="json")
 
     assert response.status_code == 200, response.content
     room.refresh_from_db()
@@ -50,9 +46,7 @@ def test_rejects_capacity_below_occupied_count():
     room = _make_room(tenant_id, capacity=4, occupied_count=3, room_no="101")
     client = _auth_client(tenant_id, role="admin")
 
-    response = client.patch(
-        f"/api/v1/hostel/rooms/{room.id}", {"capacity": 2}, format="json"
-    )
+    response = client.patch(f"/api/v1/hostel/rooms/{room.id}", {"capacity": 2}, format="json")
 
     assert response.status_code == 400, response.content
     room.refresh_from_db()
@@ -64,9 +58,7 @@ def test_warden_forbidden_from_updating_capacity():
     room = _make_room(tenant_id, capacity=2, occupied_count=0, room_no="101")
     client = _auth_client(tenant_id, role="warden")
 
-    response = client.patch(
-        f"/api/v1/hostel/rooms/{room.id}", {"capacity": 4}, format="json"
-    )
+    response = client.patch(f"/api/v1/hostel/rooms/{room.id}", {"capacity": 4}, format="json")
 
     assert response.status_code == 403
 
@@ -77,8 +69,6 @@ def test_404_for_room_in_other_tenant():
     room = _make_room(tenant_a, capacity=2, occupied_count=0, room_no="101")
     client = _auth_client(tenant_b, role="admin")
 
-    response = client.patch(
-        f"/api/v1/hostel/rooms/{room.id}", {"capacity": 4}, format="json"
-    )
+    response = client.patch(f"/api/v1/hostel/rooms/{room.id}", {"capacity": 4}, format="json")
 
     assert response.status_code == 404

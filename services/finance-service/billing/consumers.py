@@ -70,7 +70,9 @@ def handle_allocation_requested(event: dict) -> None:
     due_date = payload.get("due_date")
     university_name = payload.get("university_name") or ""
 
-    fee_structure = FeeStructure.all_objects.filter(tenant_id=tenant_id, id=fee_structure_id).first()
+    fee_structure = FeeStructure.all_objects.filter(
+        tenant_id=tenant_id, id=fee_structure_id
+    ).first()
     if fee_structure is None:
         logger.warning(
             "hostel.allocation.requested for unresolvable fee_structure_id=%s tenant_id=%s "

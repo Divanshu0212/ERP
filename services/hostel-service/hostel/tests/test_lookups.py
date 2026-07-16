@@ -23,7 +23,8 @@ def _response(status_code, json_body=None):
 @patch("hostel.lookups.requests.get")
 def test_resolves_code_on_success(mock_get):
     mock_get.return_value = _response(
-        200, {"success": True, "data": {"user_code": "u1", "email": "a@example.com", "role": "student"}}
+        200,
+        {"success": True, "data": {"user_code": "u1", "email": "a@example.com", "role": "student"}},
     )
 
     result = resolve_user_by_code("u1", "Bearer tok")
@@ -68,7 +69,8 @@ def test_raises_unavailable_on_timeout(mock_get):
 @patch("hostel.lookups.requests.get")
 def test_works_without_auth_header(mock_get):
     mock_get.return_value = _response(
-        200, {"success": True, "data": {"user_code": "u1", "email": "a@example.com", "role": "student"}}
+        200,
+        {"success": True, "data": {"user_code": "u1", "email": "a@example.com", "role": "student"}},
     )
 
     resolve_user_by_code("u1", None)

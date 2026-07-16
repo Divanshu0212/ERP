@@ -100,7 +100,9 @@ def test_bulk_deactivate_does_not_hard_delete(client):
 def test_bulk_deactivate_blocks_self_delete(client):
     inst = _make_institution()
     admin_code, admin_token = _admin(client, inst)
-    _admin(client, inst, email="admin2@example.com")  # second admin so last-admin guard doesn't also fire
+    _admin(
+        client, inst, email="admin2@example.com"
+    )  # second admin so last-admin guard doesn't also fire
 
     resp = client.post(
         "/api/v1/auth/users/bulk-delete/",
@@ -137,7 +139,9 @@ def test_bulk_deactivate_blocks_last_admin(client):
         HTTP_AUTHORIZATION=f"Bearer {token_a}",
     )
     assert resp.status_code == 200, resp.content
-    assert resp.json()["data"]["deactivated"] == [{"user_code": admin_b, "email": "adminb@example.com"}]
+    assert resp.json()["data"]["deactivated"] == [
+        {"user_code": admin_b, "email": "adminb@example.com"}
+    ]
 
     # C (not the target, and itself already inactive) attempts to deactivate
     # A, the last remaining active admin — must be blocked, distinct from

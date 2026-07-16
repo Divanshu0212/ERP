@@ -199,9 +199,7 @@ def test_admin_creates_user_and_emits_one_event(client):
     assert data["user_code"] == user.user_code
     assert user.check_password("n3w-passw0rd") is True
 
-    events = OutboxEvent.objects.filter(
-        type="user.registered", payload__user_code=user.user_code
-    )
+    events = OutboxEvent.objects.filter(type="user.registered", payload__user_code=user.user_code)
     assert events.count() == 1
     assert events.first().payload["role"] == User.Role.FACULTY
 
