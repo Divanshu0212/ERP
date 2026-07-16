@@ -44,9 +44,17 @@ describe("WardenDashboard", () => {
 
   it("renders pending allocations and escalated grievances", async () => {
     get.mockImplementation((path: string) => {
-      if (path.includes("/hostel/allocations")) {
+      if (path.includes("/hostel/allocations?status=pending")) {
         return Promise.resolve({
-          items: [{ id: "a-1", student_id: "stu-42", room: "B-204", status: "pending" }],
+          items: [
+            {
+              id: "a-1",
+              student_user_code: "stu-42",
+              room_id: "rm-1",
+              room_name: "B-204",
+              status: "pending",
+            },
+          ],
           total: 1,
         });
       }
@@ -68,7 +76,7 @@ describe("WardenDashboard", () => {
 
     render(<WardenDashboard />);
 
-    // Room is unique to the allocations table; student_id appears in both tables.
+    // Room is unique to the allocations table; the student code appears in both.
     expect(await screen.findByText("B-204")).toBeInTheDocument();
     expect(screen.getAllByText("stu-42").length).toBe(2);
     expect(await screen.findByText("tkt-9")).toBeInTheDocument();
@@ -80,7 +88,7 @@ describe("WardenDashboard", () => {
 
     render(<WardenDashboard />);
 
-    expect(await screen.findByText("No pending allocations.")).toBeInTheDocument();
+    expect(await screen.findByText("No active allocations.")).toBeInTheDocument();
     expect(await screen.findByText("No escalated grievances.")).toBeInTheDocument();
   });
 
@@ -97,7 +105,7 @@ describe("WardenDashboard", () => {
     post.mockResolvedValue({ id: "a-2", status: "pending", room_id: "rm-1", student_id: "stu-1" });
 
     render(<WardenDashboard />);
-    await screen.findByText("No pending allocations.");
+    await screen.findByText("No active allocations.");
 
     fireEvent.change(screen.getByLabelText("Room"), { target: { value: "rm-1" } });
     fireEvent.change(screen.getByLabelText("Student user code"), { target: { value: "STU042" } });
@@ -117,7 +125,7 @@ describe("WardenDashboard", () => {
     upload.mockResolvedValue({ batch_id: "b1", total_rows: 3, success_count: 2, fail_count: 1, skipped_count: 0 });
 
     render(<WardenDashboard />);
-    await screen.findByText("No pending allocations.");
+    await screen.findByText("No active allocations.");
 
     const file = new File(["room_id,student_user_code\n"], "import.csv", { type: "text/csv" });
     const input = screen.getByLabelText("File") as HTMLInputElement;
