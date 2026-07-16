@@ -110,16 +110,16 @@ reached through the gateway on `:8080` at `/api/v1/...`.
 | grievance-service    | Ticketing + ML-driven auto-escalation           | `/api/v1/grievance/`     | Django  | full   |
 | notification-service | Student inbox; consumes domain events           | `/api/v1/notify/`        | Django  | full   |
 | ai-service           | Sentiment/urgency scoring, chatbot intent       | `/api/v1/ai/`            | FastAPI | full   |
+| canteen-service      | Menu, orders & Razorpay checkout                | `/api/v1/menu-items/`, `/api/v1/orders/` | Django | full |
 | student-service      | Student master records                          | `/api/v1/students/`      | Django  | stub   |
 | attendance-service   | Attendance tracking                             | `/api/v1/attendance/`    | Django  | stub   |
 | exam-service         | Exams & results                                 | `/api/v1/exams/`         | Django  | stub   |
 | library-service      | Books & lending                                 | `/api/v1/books/`         | Django  | stub   |
-| canteen-service      | Menu & orders                                   | `/api/v1/menu-items/`    | Django  | stub   |
 | placement-service    | Placement drives                                | `/api/v1/placements/`    | Django  | stub   |
 | analytics-service    | Cross-service metrics                           | `/api/v1/metrics/`       | Django  | stub   |
 
 "stub" services expose working CRUD prototypes on the tenant/JWT/event foundation;
-the seven "full" services carry the complete business logic and the two demo flows.
+the eight "full" services carry the complete business logic and the two demo flows.
 
 ---
 
@@ -384,11 +384,20 @@ The QR on a downloaded PDF receipt links here — warden/admin-only, HMAC-verifi
 tamper-evident. Shown mid-flow: a real NITJ receipt (`RCPT-D16CF940CC3F`, hostel, ₹5000)
 scanned and confirmed **valid**.
 
+### Canteen owner — menu & orders
+
+![Canteen owner dashboard](docs/screenshots/canteen-owner-dashboard.png)
+
+A fully-built service: menu-item CRUD (edit price, mark unavailable, delete), an add-item
+form, and a live orders queue with a legal status machine (a real order — Masala Dosa ×2,
+Chai ×1, ₹135, *Placed* — advanceable to *preparing* or *cancelled*). Students order and
+pay through the same Razorpay checkout as fees.
+
 ### Other roles
 
-| Faculty | Driver | Canteen owner |
-| --- | --- | --- |
-| ![Faculty](docs/screenshots/faculty-dashboard.png) | ![Driver](docs/screenshots/driver-dashboard.png) | ![Canteen owner](docs/screenshots/canteen-owner-dashboard.png) |
+| Faculty | Driver |
+| --- | --- |
+| ![Faculty](docs/screenshots/faculty-dashboard.png) | ![Driver](docs/screenshots/driver-dashboard.png) |
 
 Faculty/exam and attendance endpoints 404 here — those are prototype/stub services (see
 [`docs/REMAINING_MODULES.md`](docs/REMAINING_MODULES.md) for what's fully built vs. stubbed).
