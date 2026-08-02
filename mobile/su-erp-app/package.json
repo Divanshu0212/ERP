@@ -6,6 +6,7 @@
   "main": "expo-router/entry",
   "dependencies": {
     "@tanstack/react-query": "^5.101.4",
+    "babel-preset-expo": "57.0.5",
     "expo": "~57.0.9",
     "expo-constants": "~57.0.8",
     "expo-linking": "~57.0.4",

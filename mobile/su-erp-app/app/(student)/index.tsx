@@ -1,15 +1,21 @@
-import { Text, View } from 'react-native';
+import { View } from 'react-native';
 
+import { Body, Card, Label, Screen, Title } from '@/components/ui';
 import { useSession } from '@/lib/auth/session';
 
 export default function Home() {
   const user = useSession((s) => s.user);
 
   return (
-    <View style={{ flex: 1, padding: 24, gap: 8 }}>
-      <Text style={{ fontSize: 22, fontWeight: '600' }}>Student</Text>
-      <Text>{user?.email}</Text>
-      <Text>{user?.user_code}</Text>
-    </View>
+    <Screen>
+      <View className="gap-4 p-4">
+        <Title>Student</Title>
+        <Card className="gap-1">
+          <Label>Signed in as</Label>
+          <Body>{user?.email}</Body>
+          <Body muted>{user?.user_code}</Body>
+        </Card>
+      </View>
+    </Screen>
   );
 }

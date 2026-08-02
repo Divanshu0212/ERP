@@ -2,6 +2,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Stack, router } from 'expo-router';
 import { useEffect } from 'react';
 
+import '../global.css';
+
 import { setOnAuthFailure } from '@/lib/api/client';
 import { useSession } from '@/lib/auth/session';
 
