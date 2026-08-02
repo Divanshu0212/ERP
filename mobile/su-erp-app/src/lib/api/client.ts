@@ -1,0 +1,134 @@
+import type { ApiEnvelope, TokenPair } from '@api-types/index';
+
+import { clearRefreshToken, readRefreshToken, saveRefreshToken } from '../auth/storage';
+
+const BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL ?? 'http://localhost:8080';
+
+/**
+ * The access token is held here, in memory, for exactly this reason: it has a
+ * 15-minute life and writing it to disk would widen the blast radius of a
+ * compromised device for no benefit. Only the refresh token is persisted,
+ * and only to SecureStore.
+ */
+let accessToken: string | null = null;
+let onAuthFailure: (() => void) | null = null;
+/** Concurrent 401s must not each fire their own refresh — they share this. */
+let inFlightRefresh: Promise<TokenPair> | null = null;
+
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+    readonly requestId: string | null = null,
+  ) {
+    super(message);
+    this.name = 'ApiError';
+  }
+}
+
+export function setAccessToken(token: string | null): void {
+  accessToken = token;
+}
+
+export function getAccessToken(): string | null {
+  return accessToken;
+}
+
+export function setOnAuthFailure(handler: () => void): void {
+  onAuthFailure = handler;
+}
+
+function requestId(): string {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
+
+async function refreshTokenPair(): Promise<TokenPair> {
+  const refresh = await readRefreshToken();
+  if (!refresh) throw new ApiError('No refresh token.', 401);
+
+  const response = await fetch(`${BASE_URL}/api/v1/auth/refresh`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Request-Id': requestId() },
+    body: JSON.stringify({ refresh }),
+  });
+
+  if (!response.ok) throw new ApiError('Refresh rejected.', response.status);
+
+  const body = (await response.json()) as ApiEnvelope<TokenPair>;
+  if (!body.data) throw new ApiError('Refresh returned no tokens.', 401);
+
+  setAccessToken(body.data.access);
+  await saveRefreshToken(body.data.refresh);
+  return body.data;
+}
+
+/** Deduplicates concurrent refreshes so one 401 storm makes one round-trip. */
+function refreshOnce(): Promise<TokenPair> {
+  if (!inFlightRefresh) {
+    inFlightRefresh = refreshTokenPair().finally(() => {
+      inFlightRefresh = null;
+    });
+  }
+  return inFlightRefresh;
+}
+
+async function endSession(): Promise<void> {
+  setAccessToken(null);
+  await clearRefreshToken();
+  onAuthFailure?.();
+}
+
+export interface RequestOptions extends RequestInit {
+  /** Sent as Idempotency-Key so a replayed queued mutation is a no-op. */
+  idempotencyKey?: string;
+}
+
+export async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
+  const { idempotencyKey, ...init } = options;
+
+  const send = async (): Promise<Response> => {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      'X-Request-Id': requestId(),
+      ...((init.headers as Record<string, string>) ?? {}),
+    };
+    if (accessToken) headers.Authorization = `Bearer ${accessToken}`;
+    if (idempotencyKey) headers['Idempotency-Key'] = idempotencyKey;
+
+    return fetch(`${BASE_URL}${path}`, { ...init, headers });
+  };
+
+  let response = await send();
+
+  if (response.status === 401) {
+    try {
+      await refreshOnce();
+    } catch {
+      await endSession();
+      throw new ApiError('Session expired.', 401);
+    }
+    response = await send();
+    if (response.status === 401) {
+      await endSession();
+      throw new ApiError('Session expired.', 401);
+    }
+  }
+
+  const body = (await response.json()) as ApiEnvelope<T>;
+
+  if (!response.ok || !body.success) {
+    throw new ApiError(
+      body?.message || `Request failed (${response.status})`,
+      response.status,
+      response.headers?.get?.('X-Request-Id') ?? null,
+    );
+  }
+
+  return body.data as T;
+}
+
+export { refreshOnce as refreshSession };
