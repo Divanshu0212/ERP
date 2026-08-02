@@ -232,6 +232,12 @@ class LoginSerializer(serializers.Serializer):
     institution_slug = serializers.SlugField()
     email = serializers.EmailField()
     password = serializers.CharField(write_only=True, style={"input_type": "password"})
+    # Mobile-only. Their absence is what selects the stateless web login path
+    # in LoginView — see the branch there.
+    device_id = serializers.CharField(max_length=64, required=False, allow_blank=False)
+    platform = serializers.CharField(max_length=16, required=False, allow_blank=True, default="")
+    model_name = serializers.CharField(max_length=128, required=False, allow_blank=True, default="")
+    push_token = serializers.CharField(max_length=255, required=False, allow_blank=True, default="")
 
 
 class RefreshSerializer(serializers.Serializer):

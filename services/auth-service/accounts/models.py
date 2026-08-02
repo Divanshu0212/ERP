@@ -321,9 +321,7 @@ class RefreshTokenRecord(models.Model):
     """
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    tenant = models.ForeignKey(
-        Institution, on_delete=models.PROTECT, related_name="refresh_tokens"
-    )
+    tenant = models.ForeignKey(Institution, on_delete=models.PROTECT, related_name="refresh_tokens")
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="refresh_tokens")
     device = models.ForeignKey(Device, on_delete=models.CASCADE, related_name="refresh_tokens")
     jti = models.CharField(max_length=64, unique=True)
