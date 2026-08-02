@@ -13,6 +13,7 @@ from hostel.views import (
     AvailableRoomsTemplateView,
     AvailableRoomsView,
     BlockListCreateView,
+    MyAllocationsView,
     MyRoomRequestsView,
     RejectRoomRequestView,
     ReleaseAllocationView,
@@ -33,6 +34,8 @@ urlpatterns = [
     path("rooms", RoomListCreateView.as_view(), name="room-list-create"),
     path("rooms/<uuid:pk>", RoomDetailView.as_view(), name="room-detail"),
     path("blocks", BlockListCreateView.as_view(), name="block-list-create"),
+    # Before the tenant-wide list so "mine" is never read as a lookup value.
+    path("allocations/mine", MyAllocationsView.as_view(), name="allocation-mine"),
     path("allocations", AllocationListView.as_view(), name="allocation-list"),
     path(
         "allocations/<uuid:pk>/release",

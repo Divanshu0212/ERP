@@ -408,6 +408,27 @@ class MyRoomRequestsView(ListAPIView):
         )
 
 
+class MyAllocationsView(ListAPIView):
+    """GET /api/v1/hostel/allocations/mine — the caller's own allocations.
+
+    ``AllocationListView`` is tenant-scoped: it answers "every allocation in
+    this institution", which is what a warden needs and what a student must
+    never receive. Without this route the mobile app would have to pull the
+    whole tenant list and filter on the client, putting every other student's
+    room assignment on the wire and into the device cache.
+    """
+
+    serializer_class = AllocationSerializer
+    permission_classes = [role_required("student")]
+
+    def get_queryset(self):
+        return (
+            Allocation.objects.select_related("room", "room__block")
+            .filter(student_user_code=self.request.user.id)
+            .order_by("-created_at")
+        )
+
+
 class AllocationImportLogListView(ListAPIView):
     """GET /api/v1/hostel/allocations/import-logs — tenant-scoped, paginated."""
 
