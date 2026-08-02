@@ -26,6 +26,19 @@ interface SessionState {
   restore(): Promise<void>;
 }
 
+/**
+ * Wipes cached server data on sign-out. Registered by the root layout rather
+ * than imported, because the query cache already depends on this module and
+ * importing it back would close the cycle. Without this, one student's dues
+ * and grievances stay readable on disk after the next student signs in on a
+ * shared phone.
+ */
+let clearCachedData: () => void = () => {};
+
+export function setCacheCleaner(fn: () => void): void {
+  clearCachedData = fn;
+}
+
 export const useSession = create<SessionState>((set) => ({
   status: 'loading',
   user: null,
@@ -44,6 +57,7 @@ export const useSession = create<SessionState>((set) => ({
 
   async signOut() {
     await apiLogout();
+    clearCachedData();
     set({ user: null, status: 'signed-out' });
   },
 
