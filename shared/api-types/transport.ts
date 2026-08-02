@@ -45,3 +45,17 @@ export interface BookingInput {
   seat_no: number;
   idempotency_key?: string;
 }
+
+/**
+ * One row of GET /routes/{id}/seats. Hand-built in RouteSeatsView rather than
+ * serialized from a model, so this shape is defined by that view.
+ */
+export interface ScheduleSeats {
+  schedule_id: string;
+  bus_no: string;
+  departure_time: string;
+  capacity: number;
+  available: number;
+  /** Seat numbers already booked, ascending. */
+  taken: number[];
+}
