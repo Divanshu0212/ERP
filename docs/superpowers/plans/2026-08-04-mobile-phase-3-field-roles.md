@@ -779,8 +779,8 @@ def _client(tenant_id, role="warden", sub="WRD-001"):
 def _ticket(tenant_id, status="open"):
     return Ticket.objects.create(
         tenant_id=tenant_id,
-        subject="Broken fan",
-        description="Room 12",
+        category="hostel",
+        description="Broken fan in room 12",
         raised_by="STU-001",
         status=status,
     )
@@ -810,8 +810,8 @@ def test_escalated_tickets_can_be_resolved():
     assert response.status_code == 200
 
 
-def test_reopening_a_closed_ticket_is_rejected():
-    ticket = _ticket(TENANT_A, status="closed")
+def test_reopening_a_resolved_ticket_is_rejected():
+    ticket = _ticket(TENANT_A, status="resolved")
     client = _client(TENANT_A)
 
     response = client.patch(
@@ -819,6 +819,17 @@ def test_reopening_a_closed_ticket_is_rejected():
     )
 
     assert response.status_code == 400
+
+
+def test_an_open_ticket_can_move_to_in_progress():
+    ticket = _ticket(TENANT_A)
+    client = _client(TENANT_A)
+
+    response = client.patch(
+        f"/api/v1/grievance/{ticket.id}/status", {"status": "in_progress"}, format="json"
+    )
+
+    assert response.status_code == 200
 
 
 def test_an_unknown_status_is_rejected():
@@ -864,15 +875,16 @@ Expected: FAIL — 404, the route does not exist
 Append to `services/grievance-service/grievance/views.py`:
 
 ```python
-#: Legal status moves. Resolution is terminal-ish: a closed ticket never
-#: reopens, because the 7-day media purge (see the mobile spec) has already
-#: been scheduled against its resolution time and reopening would promise
-#: evidence that is on its way to being deleted.
+#: Legal status moves, over Ticket.Status (open/escalated/in_progress/
+#: resolved — there is no 'closed'). Resolution is terminal: a resolved
+#: ticket never reopens, because the 7-day media purge (see the mobile
+#: spec) is scheduled against its resolution time, and reopening would
+#: promise evidence that is already on its way to being deleted.
 _ALLOWED_STATUS_TRANSITIONS = {
-    "open": {"escalated", "resolved", "closed"},
-    "escalated": {"resolved", "closed"},
-    "resolved": {"closed"},
-    "closed": set(),
+    "open": {"escalated", "in_progress", "resolved"},
+    "escalated": {"in_progress", "resolved"},
+    "in_progress": {"resolved"},
+    "resolved": set(),
 }
 
 
@@ -927,7 +939,7 @@ In `services/grievance-service/grievance/urls.py`:
 - [ ] **Step 6: Run the tests**
 
 Run: `cd services/grievance-service && python -m pytest grievance/tests/ -v`
-Expected: the 6 new tests PASS and every pre-existing grievance test still PASSES
+Expected: the 7 new tests PASS and every pre-existing grievance test still PASSES
 
 - [ ] **Step 7: Commit**
 
@@ -1291,13 +1303,13 @@ export default function WardenGrievances() {
         ListEmptyComponent={<Text style={{ padding: 24 }}>No open grievances.</Text>}
         renderItem={({ item }) => (
           <View style={{ padding: 16, borderBottomWidth: 1, borderBottomColor: '#eee', gap: 6 }}>
-            <Text style={{ fontWeight: '600' }}>{item.subject}</Text>
+            <Text style={{ fontWeight: '600', textTransform: 'capitalize' }}>{item.category}</Text>
             <Text style={{ color: '#666' }}>{item.description}</Text>
             <Text style={{ color: item.status === 'escalated' ? '#b00020' : '#666' }}>
               {item.status}
               {item.urgency ? ` · ${item.urgency}` : ''}
             </Text>
-            {item.status !== 'resolved' && item.status !== 'closed' ? (
+            {item.status !== 'resolved' ? (
               <Pressable
                 onPress={() => resolve(item.id)}
                 style={{

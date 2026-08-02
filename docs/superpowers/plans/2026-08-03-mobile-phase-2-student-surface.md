@@ -482,15 +482,23 @@ export interface BusSchedule {
 Create `shared/api-types/grievance.ts`:
 
 ```ts
-export type TicketStatus = 'open' | 'escalated' | 'resolved' | 'closed';
+/** Mirrors Ticket.Status in grievance/models.py — there is no 'closed'. */
+export type TicketStatus = 'open' | 'escalated' | 'in_progress' | 'resolved';
 export type Urgency = 'low' | 'medium' | 'high' | 'critical';
+
+/** Categories are free-form at the DB level; these are the seeded labels. */
+export type TicketCategory = 'hostel' | 'academic' | 'harassment' | 'it' | 'ragging';
 
 export interface Ticket {
   id: string;
-  subject: string;
+  raised_by: string;
+  /** There is no subject field — category plus description is the whole ticket. */
+  category: string;
   description: string;
-  status: TicketStatus;
+  sentiment_score: number | null;
   urgency: Urgency | null;
+  status: TicketStatus;
+  assigned_to: string | null;
   created_at: string;
 }
 ```
@@ -1789,7 +1797,7 @@ test('fetchTickets hits the grievance endpoint', async () => {
 test('createTicket posts directly when online', async () => {
   request.mockResolvedValue({ id: 't1' });
 
-  await createTicket({ subject: 'Fan broken', description: 'Room 12' });
+  await createTicket({ category: 'hostel', description: 'Fan broken in room 12' });
 
   expect(request).toHaveBeenCalled();
   expect(enqueue).not.toHaveBeenCalled();
@@ -1798,12 +1806,15 @@ test('createTicket posts directly when online', async () => {
 test('createTicket queues when offline instead of failing', async () => {
   useConnectivity.setState({ online: false });
 
-  const result = await createTicket({ subject: 'Fan broken', description: 'Room 12' });
+  const result = await createTicket({
+    category: 'hostel',
+    description: 'Fan broken in room 12',
+  });
 
   expect(enqueue).toHaveBeenCalledWith(
     '/api/v1/grievance',
     'POST',
-    expect.objectContaining({ subject: 'Fan broken' }),
+    expect.objectContaining({ category: 'hostel' }),
   );
   expect(result).toEqual({ queued: true });
   expect(request).not.toHaveBeenCalled();
@@ -1827,7 +1838,7 @@ import { enqueue } from '../offline/queue';
 import { request } from './client';
 
 export interface TicketInput {
-  subject: string;
+  category: string;
   description: string;
 }
 
@@ -1890,18 +1901,19 @@ import { OfflineBanner } from '@/components/OfflineBanner';
 import { TICKETS_KEY, useCreateTicket, useTickets } from '@/features/grievance/useGrievance';
 import { cacheAge } from '@/lib/query/persister';
 
+const CATEGORIES = ['hostel', 'academic', 'harassment', 'it', 'ragging'];
+
 export default function GrievanceScreen() {
   const { data } = useTickets();
   const create = useCreateTicket();
-  const [subject, setSubject] = useState('');
+  const [category, setCategory] = useState('hostel');
   const [description, setDescription] = useState('');
 
   function submit() {
     create.mutate(
-      { subject, description },
+      { category, description },
       {
         onSuccess: (result) => {
-          setSubject('');
           setDescription('');
           if (result && 'queued' in result) {
             Alert.alert('Saved offline', 'Your complaint will be sent when you reconnect.');
@@ -1917,12 +1929,22 @@ export default function GrievanceScreen() {
       <OfflineBanner cachedAt={cacheAge(TICKETS_KEY)} />
 
       <View style={{ padding: 16, gap: 8 }}>
-        <TextInput
-          placeholder="Subject"
-          value={subject}
-          onChangeText={setSubject}
-          style={{ borderWidth: 1, borderColor: '#ccc', borderRadius: 8, padding: 12 }}
-        />
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+          {CATEGORIES.map((option) => (
+            <Pressable
+              key={option}
+              onPress={() => setCategory(option)}
+              style={{
+                paddingVertical: 8,
+                paddingHorizontal: 14,
+                borderRadius: 999,
+                backgroundColor: category === option ? '#dbeafe' : '#f3f4f6',
+              }}
+            >
+              <Text style={{ textTransform: 'capitalize' }}>{option}</Text>
+            </Pressable>
+          ))}
+        </View>
         <TextInput
           placeholder="What is wrong?"
           value={description}
@@ -1938,7 +1960,7 @@ export default function GrievanceScreen() {
         />
         <Pressable
           onPress={submit}
-          disabled={!subject || create.isPending}
+          disabled={!description || create.isPending}
           style={{ backgroundColor: '#1d4ed8', borderRadius: 8, padding: 14, alignItems: 'center' }}
         >
           <Text style={{ color: '#fff', fontWeight: '600' }}>File complaint</Text>
@@ -1950,7 +1972,10 @@ export default function GrievanceScreen() {
         keyExtractor={(t) => t.id}
         renderItem={({ item }) => (
           <View style={{ padding: 16, borderBottomWidth: 1, borderBottomColor: '#eee' }}>
-            <Text style={{ fontWeight: '600' }}>{item.subject}</Text>
+            <Text style={{ fontWeight: '600', textTransform: 'capitalize' }}>{item.category}</Text>
+            <Text style={{ color: '#555' }} numberOfLines={2}>
+              {item.description}
+            </Text>
             <Text style={{ color: '#666' }}>
               {item.status}
               {item.urgency ? ` · ${item.urgency}` : ''}
