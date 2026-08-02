@@ -59,13 +59,29 @@ class RouteSeatsView(APIView):
         except Route.DoesNotExist:
             return fail("Route not found.", status=404)
 
-        schedules = BusSchedule.objects.filter(route=route).order_by("departure_time")
+        schedules = list(BusSchedule.objects.filter(route=route).order_by("departure_time"))
+
+        # Which seats are gone, per schedule. A bare available count tells a
+        # student how many seats are left but not which ones, so a seat picker
+        # cannot render without this — and letting them tap a taken seat only
+        # to be refused by the uniqueness constraint is a worse experience than
+        # showing it as unavailable up front.
+        taken_by_schedule = {schedule.id: [] for schedule in schedules}
+        for schedule_id, seat_no in Booking.objects.filter(
+            schedule__in=schedules, status="booked"
+        ).values_list("schedule_id", "seat_no"):
+            taken_by_schedule[schedule_id].append(seat_no)
+
         data = [
             {
                 "schedule_id": str(schedule.id),
                 "bus_no": schedule.bus_no,
+                # Without this the student sees several buses on a route with
+                # no way to tell which one leaves when.
+                "departure_time": schedule.departure_time.isoformat(),
                 "capacity": schedule.capacity,
                 "available": get_available_seats(schedule),
+                "taken": sorted(taken_by_schedule[schedule.id]),
             }
             for schedule in schedules
         ]
