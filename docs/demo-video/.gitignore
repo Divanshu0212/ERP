@@ -1,0 +1,14 @@
+# Generated and vendored artifacts — the demo video regenerates from the scripts.
+# Only the source scripts, narration config, and the final rendered video are tracked.
+
+.venv/
+node_modules/
+
+# Piper TTS voice model — download separately, too large for git
+voices/
+
+# Intermediate render output
+scenes/
+video-raw/
+audio/
+output/

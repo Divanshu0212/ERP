@@ -1,0 +1,451 @@
+1
+00:00:00,000 --> 00:00:03,626
+SU ERP is a multi tenant university E R P.
+
+2
+00:00:03,626 --> 00:00:07,253
+One deployment serves many institutions, each isolated at the row
+
+3
+00:00:07,253 --> 00:00:10,879
+level. It's built as microservices: eight Django services plus one
+
+4
+00:00:10,879 --> 00:00:14,505
+Fast A P I ML service, talking to each other
+
+5
+00:00:14,505 --> 00:00:18,131
+only through events on Rabbit M Q, sitting behind an
+
+6
+00:00:18,131 --> 00:00:21,758
+Nginx gateway. Frontend is Next dot J S. Everything you're
+
+7
+00:00:21,758 --> 00:00:25,384
+about to see is real. No mocked data — this
+
+8
+00:00:25,384 --> 00:00:29,010
+is the actual system, running locally.
+
+9
+00:00:29,010 --> 00:00:32,209
+Before any student or staff exists, a superadmin provisions the
+
+10
+00:00:32,209 --> 00:00:35,409
+institution itself. This is the only cross tenant screen in
+
+11
+00:00:35,409 --> 00:00:38,608
+the system. Everything else is locked to one tenant by
+
+12
+00:00:38,608 --> 00:00:41,807
+a claim inside the login token.
+
+13
+00:00:41,807 --> 00:00:45,630
+Every other login is tenant scoped: institution slug, email, password.
+
+14
+00:00:45,630 --> 00:00:49,454
+The slug picks the tenant. Auth service issues a signed
+
+15
+00:00:49,454 --> 00:00:53,277
+token with the user id, role, and tenant baked into
+
+16
+00:00:53,277 --> 00:00:57,101
+it. There's no gateway that vouches for you — each
+
+17
+00:00:57,101 --> 00:01:00,924
+service verifies that signature itself. Zero trust.
+
+18
+00:01:00,924 --> 00:01:05,104
+Admin dashboard: live counters for users, invoices, allocations, and tickets,
+
+19
+00:01:05,104 --> 00:01:09,284
+all scoped to this one institution. Fee structure management, hostel
+
+20
+00:01:09,284 --> 00:01:13,464
+block setup, and the full user roster — warden, faculty,
+
+21
+00:01:13,464 --> 00:01:17,644
+driver, canteen owner, students.
+
+22
+00:01:17,644 --> 00:01:20,749
+Admin can multi select and bulk deactivate users. It's a
+
+23
+00:01:20,749 --> 00:01:23,854
+soft delete, not a hard delete, so the row stays
+
+24
+00:01:23,854 --> 00:01:26,960
+for audit. Two guardrails are enforced on the server: you
+
+25
+00:01:26,960 --> 00:01:30,065
+can't deactivate yourself, and you can't remove the tenant's last
+
+26
+00:01:30,065 --> 00:01:33,170
+active admin.
+
+27
+00:01:33,170 --> 00:01:35,829
+Onboarding is a single add form, or a C S
+
+28
+00:01:35,829 --> 00:01:38,487
+V bulk upload for a whole cohort in one shot.
+
+29
+00:01:38,487 --> 00:01:42,772
+This next part is a distributed saga across three services:
+
+30
+00:01:42,772 --> 00:01:47,058
+hostel, finance, and notification, coordinated entirely through events. No service
+
+31
+00:01:47,058 --> 00:01:51,343
+ever calls another directly. Watch the sequence.
+
+32
+00:01:51,343 --> 00:01:54,838
+The student browses available rooms and submits a request.
+
+33
+00:01:54,838 --> 00:01:58,227
+The warden approves it and picks a fee structure. This
+
+34
+00:01:58,227 --> 00:02:01,616
+calls the exact same allocation path as a direct bulk
+
+35
+00:02:01,616 --> 00:02:05,005
+allocate. Approval is just another entry point into the same
+
+36
+00:02:05,005 --> 00:02:08,394
+saga. Under the hood, hostel service just emitted an allocation
+
+37
+00:02:08,394 --> 00:02:11,783
+requested event, and finance service consumed it and raised an
+
+38
+00:02:11,783 --> 00:02:15,172
+invoice, with no direct call between them.
+
+39
+00:02:15,172 --> 00:02:17,636
+Payment goes through a real Razorpay checkout, in test mode,
+
+40
+00:02:17,636 --> 00:02:20,099
+so I won't complete a live charge on camera. Once
+
+41
+00:02:20,099 --> 00:02:22,563
+payment settles, finance emits a payment success event. Hostel correlates
+
+42
+00:02:22,563 --> 00:02:25,027
+that back to the original allocation by invoice ID and
+
+43
+00:02:25,027 --> 00:02:27,490
+confirms the seat, and notification service writes the student's inbox
+
+44
+00:02:27,490 --> 00:02:29,954
+message. Four services, one business transaction, none of them ever
+
+45
+00:02:29,954 --> 00:02:32,417
+blocked on another's uptime — here's that already-completed flow on
+
+46
+00:02:32,417 --> 00:02:34,881
+an earlier invoice.
+
+47
+00:02:34,881 --> 00:02:37,416
+Because payment succeeded, a P D F receipt was generated
+
+48
+00:02:37,416 --> 00:02:39,950
+with a signed verification token, rendered as a Q R
+
+49
+00:02:39,950 --> 00:02:42,485
+code.
+
+50
+00:02:42,485 --> 00:02:46,112
+A warden or admin can scan that Q R code
+
+51
+00:02:46,112 --> 00:02:49,740
+here. It's H MAC verified and tamper evident, cross checked
+
+52
+00:02:49,740 --> 00:02:53,367
+against the server. This is a real receipt, confirmed valid.
+
+53
+00:02:53,367 --> 00:02:56,875
+This saga is order independent — even if the payment
+
+54
+00:02:56,875 --> 00:03:00,383
+event arrives before the invoice event, it still resolves correctly
+
+55
+00:03:00,383 --> 00:03:03,891
+— and it's idempotent under redelivery. I stress tested it
+
+56
+00:03:03,891 --> 00:03:07,399
+separately: fifty threads racing for one seat, using real Postgres
+
+57
+00:03:07,399 --> 00:03:10,907
+row locks, and exactly one thread wins. I also killed
+
+58
+00:03:10,907 --> 00:03:14,414
+Rabbit M Q in the middle of a live saga.
+
+59
+00:03:14,414 --> 00:03:17,922
+The write still succeeded, because the event is written to
+
+60
+00:03:17,922 --> 00:03:21,430
+an outbox table inside the very same transaction as the
+
+61
+00:03:21,430 --> 00:03:24,938
+business row, instead of being published inline. When the broker
+
+62
+00:03:24,938 --> 00:03:28,446
+came back online, the backlog drained itself automatically — no
+
+63
+00:03:28,446 --> 00:03:31,954
+manual replay, no lost events.
+
+64
+00:03:31,954 --> 00:03:35,710
+Second saga: a grievance, scored by a dedicated machine learning
+
+65
+00:03:35,710 --> 00:03:39,466
+service, automatically escalated to the warden if it's serious.
+
+66
+00:03:39,466 --> 00:03:42,443
+The student files a ticket. Grievance service emits a created
+
+67
+00:03:42,443 --> 00:03:45,421
+event, carrying just the free text and who raised it.
+
+68
+00:03:45,421 --> 00:03:48,398
+The A I service, which is Fast A P I
+
+69
+00:03:48,398 --> 00:03:51,376
+rather than Django because it's a pure scoring endpoint with
+
+70
+00:03:51,376 --> 00:03:54,353
+no need for an O R M, consumes it.
+
+71
+00:03:54,353 --> 00:03:58,327
+Scoring is VADER sentiment analysis plus keyword based urgency rules
+
+72
+00:03:58,327 --> 00:04:02,301
+— deliberately lightweight, no heavy transformer model, so it runs
+
+73
+00:04:02,301 --> 00:04:06,275
+on a laptop. Safety keywords like fire, or ragging, push
+
+74
+00:04:06,275 --> 00:04:10,249
+urgency straight to critical, regardless of the sentiment score.
+
+75
+00:04:10,249 --> 00:04:13,922
+The A I service emits a scored event. Grievance service
+
+76
+00:04:13,922 --> 00:04:17,594
+auto escalates high and critical tickets straight to the warden's
+
+77
+00:04:17,594 --> 00:04:21,267
+queue, and notification service writes the student a message. Same
+
+78
+00:04:21,267 --> 00:04:24,939
+event driven pattern as the hostel saga, completely different services.
+
+79
+00:04:24,939 --> 00:04:28,767
+Canteen is a fully separate service, unrelated to hostel or
+
+80
+00:04:28,767 --> 00:04:32,594
+finance business logic, but it rides the same rails: menu
+
+81
+00:04:32,594 --> 00:04:36,422
+management, an orders queue with a real status machine —
+
+82
+00:04:36,422 --> 00:04:40,250
+placed, preparing, ready, completed — and checkout goes through the
+
+83
+00:04:40,250 --> 00:04:44,077
+same payment integration students already used to pay hostel fees.
+
+84
+00:04:44,077 --> 00:04:47,905
+One payment concern, reused across two unrelated domains.
+
+85
+00:04:47,905 --> 00:04:51,340
+Faculty and driver logins exist and are fully tenant and
+
+86
+00:04:51,340 --> 00:04:54,776
+token aware, but exam, attendance, and full transport logic are
+
+87
+00:04:54,776 --> 00:04:58,211
+intentionally stubs for this pass — working C R U
+
+88
+00:04:58,211 --> 00:05:01,646
+D prototypes on the same foundation, not full business logic.
+
+89
+00:05:01,646 --> 00:05:05,081
+Eight services were built deep, rather than thirteen services shallow,
+
+90
+00:05:05,081 --> 00:05:08,517
+because the saga and the M L demo needed real
+
+91
+00:05:08,517 --> 00:05:11,952
+depth to prove the architecture actually holds up under concurrency
+
+92
+00:05:11,952 --> 00:05:15,387
+and failure, not just on the happy path.
+
+93
+00:05:15,387 --> 00:05:19,019
+Same login screen, different slug, completely disjoint data — different
+
+94
+00:05:19,019 --> 00:05:22,652
+rooms, different invoices, different users — despite sharing the same
+
+95
+00:05:22,652 --> 00:05:26,284
+Postgres instance and the same tables. Isolation is enforced by
+
+96
+00:05:26,284 --> 00:05:29,916
+a custom manager that scopes every query to the tenant
+
+97
+00:05:29,916 --> 00:05:33,549
+in the current request's token, not by convention, and not
+
+98
+00:05:33,549 --> 00:05:37,181
+by the frontend being careful.
+
+99
+00:05:37,181 --> 00:05:40,669
+Every Django service exposes Prometheus metrics: request rate, latency, error
+
+100
+00:05:40,669 --> 00:05:44,157
+rate, and per tenant request count. This capture is from
+
+101
+00:05:44,157 --> 00:05:47,644
+a real load run — around twenty eight hundred requests
+
+102
+00:05:47,644 --> 00:05:51,132
+at roughly ten a second, across two tenants, with a
+
+103
+00:05:51,132 --> 00:05:54,620
+P fifty of ten milliseconds, a P ninety five of
+
+104
+00:05:54,620 --> 00:05:58,108
+thirty four, and zero server errors. That run is also
+
+105
+00:05:58,108 --> 00:06:01,595
+what caught the gateway's rate limiter working, and the auth
+
+106
+00:06:01,595 --> 00:06:05,083
+service's lockout working, correctly rejecting abuse.
+
+107
+00:06:05,083 --> 00:06:08,976
+To summarize the engineering, not just the interface: multi tenant
+
+108
+00:06:08,976 --> 00:06:12,869
+with row level isolation, zero trust authentication verified independently by
+
+109
+00:06:12,869 --> 00:06:16,762
+every service, sagas built on a transactional outbox and an
+
+110
+00:06:16,762 --> 00:06:20,654
+idempotent inbox so no event is ever lost or double
+
+111
+00:06:20,654 --> 00:06:24,547
+processed, tested under real concurrency, not just unit tests, and
+
+112
+00:06:24,547 --> 00:06:28,440
+observable in production with Prometheus and Grafana. Code, tests, and
+
+113
+00:06:28,440 --> 00:06:32,333
+the full C I pipeline are all in the repository.
