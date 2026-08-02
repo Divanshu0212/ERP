@@ -141,25 +141,71 @@ d.delete()
 
 ## 5. Run the app
 
+### Over USB (recommended — no LAN IP needed)
+
 ```bash
+adb devices                     # enable USB debugging on the phone first
+adb reverse tcp:8081 tcp:8081   # Metro
+adb reverse tcp:8080 tcp:8080   # gateway  ← easy to forget; without it every
+                                #            API call fails though the app loads
 cd mobile/su-erp-app
-cp .env.example .env      # then edit EXPO_PUBLIC_API_BASE_URL
+cp .env.example .env            # set EXPO_PUBLIC_API_BASE_URL=http://localhost:8080
 npx expo start
 ```
 
-**Gotcha — LAN IP.** `EXPO_PUBLIC_API_BASE_URL` must be your machine's LAN IP
-(e.g. `http://192.168.1.10:8080`). On a physical device `localhost` resolves to
-the phone itself, not your laptop, and every request fails with a network error
-that looks like the gateway being down.
+With both ports reversed, the phone's `localhost` reaches your laptop, so
+`http://localhost:8080` is correct and the LAN-IP problem disappears. Verify the
+tunnel before blaming the app:
 
-Log in with the institution slug (`pdpmiiitdmj`), the test email, and the
-password above. You should land on the student home screen showing your email
-and user code.
+```bash
+adb shell 'curl -s -o /dev/null -w "%{http_code}\n" http://localhost:8080/api/v1/auth/devices'
+# 401 = reachable (auth required).  502 = auth-service down.  000 = no reverse.
+```
 
-To confirm revoke ends the session: with the app signed in, list devices, revoke
-the app's own `device_id`, then restart the app to force `restore()`. The app
-lands on the login screen rather than a stale shell — `restore()` refreshes
-against a revoked chain, gets a 401, and signs out.
+**Reversals are lost** whenever the adb daemon restarts or you run
+`adb shell pm clear host.exp.exponent`. Re-run both `adb reverse` commands after
+either.
+
+### Over Wi-Fi
+
+`EXPO_PUBLIC_API_BASE_URL` must be your machine's LAN IP (e.g.
+`http://192.168.1.10:8080`). On a physical device `localhost` resolves to the
+phone itself, not your laptop, and every request fails with a network error that
+looks like the gateway being down.
+
+`.env` is read only at Metro startup — restart `expo start` after editing it.
+
+Log in with the institution slug, the test email, and the password above. You
+should land on the student home screen showing your email and user code.
+
+**Verified on device** (Motorola edge 50 fusion, Android 16, Expo Go SDK 57):
+login registered a device row with a SecureStore-generated `device_id` and one
+live refresh token, and `/api/v1/auth/me` populated the student screen.
+
+To confirm revoke ends the session: with the app signed in, revoke the app's own
+`device_id`, then restart the app to force `restore()`.
+
+```bash
+docker compose -f infra/docker-compose.yml exec -T auth-service python manage.py shell -c "
+from accounts.models import Device
+from accounts.token_service import revoke_device_chain
+d = Device.objects.get(device_id='<the-app-device-id>')
+print('revoked', revoke_device_chain(d))
+"
+adb shell am force-stop host.exp.exponent
+adb shell am start -a android.intent.action.VIEW -d 'exp://localhost:8081' host.exp.exponent
+```
+
+Verified: the app lands on the login screen rather than a stale shell —
+`restore()` refreshes against the revoked chain, gets a 401, and signs out.
+
+**Gotcha — a stale session hides login failures.** If the app still holds a
+refresh token from an earlier run, `restore()` signs you straight in and the
+login form never submits, so a broken login looks like a working one. Confirm a
+login actually reached the backend by checking for a `LoginAudit` row rather
+than trusting the screen. `adb shell pm clear host.exp.exponent` wipes
+SecureStore for a genuinely cold start (and drops the `adb reverse` tunnels —
+re-add them).
 
 ## 6. Test suites
 
@@ -174,6 +220,25 @@ cd mobile/su-erp-app && npx tsc --noEmit && npx jest                        # 23
 a `jest-mock` API that has no published 30.4.2 counterpart, and `jest-expo`
 declares the RN preset as an unbundled peer. Without them the suite fails to
 start with `this._moduleMocker.clearMocksOnScope is not a function`.
+
+**Gotcha — do not install reanimated / gesture-handler / worklets.**
+`expo-router` lists `react-native-reanimated` and `react-native-gesture-handler`
+as peers but marks both `optional: true`, and Phase 1 uses no animations.
+Installing them pulls in `react-native-worklets`, which segfaults Expo Go on
+launch — `Fatal signal 11 (SIGSEGV)` on the `mqt_v_js` thread, with
+`libworklets.so` calling into Hermes' `memcpy`. The process dies before any JS
+error can surface, so there is no redbox: the app just bounces back to the Expo
+Go home screen. Only `react-native-safe-area-context` and
+`react-native-screens` are genuinely required.
+
+**Gotcha — stale docker-proxy holds the ports.** If `docker compose up` fails
+with `ports are not available: ... address already in use` while `docker ps`
+shows nothing running, orphaned root-owned `docker-proxy` processes are still
+bound. `docker compose down` does not clear them:
+
+```bash
+sudo pkill -f docker-proxy      # or: sudo systemctl restart docker
+```
 
 **Gotcha — `create-expo-app` on npm 12.** The scaffolder cannot parse npm 12's
 `npm pack --dry-run` output and exits with

@@ -1,7 +1,8 @@
 {
   "expo": {
-    "name": "HelloWorld",
-    "slug": "expo-template-blank-typescript",
+    "name": "SU-ERP",
+    "slug": "su-erp-app",
+    "scheme": "suerp",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
