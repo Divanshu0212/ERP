@@ -1,4 +1,5 @@
-import { Easing, LayoutAnimation, Platform, UIManager } from 'react-native';
+import { useEffect, useState } from 'react';
+import { AccessibilityInfo, Easing, LayoutAnimation, Platform, UIManager } from 'react-native';
 
 /**
  * Motion runs on RN core Animated rather than Reanimated: react-native-worklets
@@ -41,4 +42,28 @@ export function animateNextLayout(): void {
     update: { type: 'easeInEaseOut' },
     delete: { type: 'easeIn', property: 'opacity' },
   });
+}
+
+/**
+ * Tracks the system "Remove animations" setting. Material requires motion to
+ * degrade to a crossfade or an instant cut when a user has asked for less of
+ * it — for some people large movement is nausea, not delight.
+ */
+export function useReduceMotion(): boolean {
+  const [reduced, setReduced] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    void AccessibilityInfo.isReduceMotionEnabled().then((value) => {
+      if (active) setReduced(value);
+    });
+
+    const subscription = AccessibilityInfo.addEventListener('reduceMotionChanged', setReduced);
+    return () => {
+      active = false;
+      subscription.remove();
+    };
+  }, []);
+
+  return reduced;
 }

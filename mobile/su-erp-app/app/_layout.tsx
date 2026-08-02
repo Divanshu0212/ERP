@@ -6,6 +6,7 @@ import '../global.css';
 
 import { setOnAuthFailure } from '@/lib/api/client';
 import { useSession } from '@/lib/auth/session';
+import { startConnectivityWatch } from '@/lib/net/connectivity';
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, staleTime: 30_000 } },
@@ -19,6 +20,8 @@ export default function RootLayout() {
       useSession.setState({ status: 'signed-out', user: null });
       router.replace('/(auth)/login');
     });
+
+    return startConnectivityWatch();
   }, []);
 
   return (

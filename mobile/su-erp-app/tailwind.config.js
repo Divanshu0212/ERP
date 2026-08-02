@@ -10,7 +10,10 @@ module.exports = {
         ink: {
           DEFAULT: '#16181d',
           muted: '#5b6472',
-          faint: '#8b95a5',
+          // 4.77:1 on the sunken surface, 5.17:1 on white. A lighter gray
+          // reads better in a mockup and fails in sunlight, which is where
+          // this app is actually used.
+          faint: '#656e7a',
         },
         surface: {
           DEFAULT: '#ffffff',
