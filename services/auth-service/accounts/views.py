@@ -9,10 +9,18 @@ exactly what ``suerp_common.auth.JWTAuthentication`` reads; every other
 service treats this shape as its contract with auth-service.
 """
 
-from accounts.models import Institution, LoginAudit, RefreshTokenRecord, User, UserProfile
+from accounts.models import (
+    Device,
+    Institution,
+    LoginAudit,
+    RefreshTokenRecord,
+    User,
+    UserProfile,
+)
 from accounts.serializers import (
     AdminCreateUserSerializer,
     BulkCreateStudentRowSerializer,
+    DeviceSerializer,
     InstitutionCreateSerializer,
     InstitutionSerializer,
     LoginSerializer,
@@ -677,3 +685,36 @@ class PlatformAdminView(APIView):
             message="Admin created.",
             status=201,
         )
+
+
+class DeviceListView(APIView):
+    """GET /api/v1/auth/devices — the caller's own registered devices."""
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        devices = Device.objects.filter(
+            user_id=request.user.id, tenant_id=request.user.tenant_id
+        ).order_by("-last_seen_at")
+        return ok(DeviceSerializer(devices, many=True).data)
+
+
+class DeviceRevokeView(APIView):
+    """DELETE /api/v1/auth/devices/<device_id> — sign one device out.
+
+    Scoped to the caller's own devices: a device_id belonging to someone else
+    is reported as not found rather than forbidden, so the endpoint cannot be
+    used to probe which device ids exist.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def delete(self, request, device_id):
+        device = Device.objects.filter(
+            user_id=request.user.id, tenant_id=request.user.tenant_id, device_id=device_id
+        ).first()
+        if device is None:
+            return fail("Device not found.", status=404)
+
+        revoke_device_chain(device)
+        return ok(None, message="Device signed out.")

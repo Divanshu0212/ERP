@@ -1,6 +1,8 @@
 """Auth endpoints: register, login, refresh, me, institution, users."""
 
 from accounts.views import (
+    DeviceListView,
+    DeviceRevokeView,
     InstitutionView,
     LoginView,
     LogoutView,
@@ -23,6 +25,8 @@ urlpatterns = [
     path("login", LoginView.as_view(), name="auth-login"),
     path("refresh", RefreshView.as_view(), name="auth-refresh"),
     path("logout", LogoutView.as_view(), name="auth-logout"),
+    path("devices", DeviceListView.as_view(), name="auth-devices"),
+    path("devices/<str:device_id>", DeviceRevokeView.as_view(), name="auth-device-revoke"),
     path("me", MeView.as_view(), name="auth-me"),
     path("institution", InstitutionView.as_view(), name="auth-institution"),
     path("users", UserAdminView.as_view(), name="auth-users"),

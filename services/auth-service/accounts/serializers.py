@@ -261,3 +261,11 @@ class UserProfileSerializer(serializers.Serializer):
     blood_group = serializers.CharField(max_length=5, required=False, allow_blank=True)
     profile_photo_url = serializers.URLField(required=False, allow_blank=True)
     updated_at = serializers.DateTimeField(read_only=True)
+
+
+class DeviceSerializer(serializers.Serializer):
+    device_id = serializers.CharField()
+    platform = serializers.CharField()
+    model_name = serializers.CharField()
+    last_seen_at = serializers.DateTimeField()
+    is_stale = serializers.BooleanField()
