@@ -1,0 +1,163 @@
+[
+  {
+    "id": "00-cold-open",
+    "caption": "SU-ERP — a multi-tenant university ERP",
+    "text": "SU ERP is a multi tenant university E R P. One deployment serves many institutions, each isolated at the row level. It's built as microservices: eight Django services plus one Fast A P I ML service, talking to each other only through events on Rabbit M Q, sitting behind an Nginx gateway. Frontend is Next dot J S. Everything you're about to see is real. No mocked data — this is the actual system, running locally.",
+    "wav": "/home/divanshub/Desktop/Capstone/docs/demo-video/audio/00-cold-open.wav",
+    "duration": 29.010113
+  },
+  {
+    "id": "01-superadmin",
+    "caption": "Superadmin — provisioning a new institution (cross-tenant)",
+    "text": "Before any student or staff exists, a superadmin provisions the institution itself. This is the only cross tenant screen in the system. Everything else is locked to one tenant by a claim inside the login token.",
+    "wav": "/home/divanshub/Desktop/Capstone/docs/demo-video/audio/01-superadmin.wav",
+    "duration": 12.797551
+  },
+  {
+    "id": "01b-superadmin-created",
+    "caption": "New tenant created — zero shared data with existing institutions",
+    "text": "That just created a brand new tenant with zero shared state with the existing institutions. Different users, different rooms, different invoices, same database, same tables — isolated by a tenant id column enforced in the O R M layer.",
+    "wav": "/home/divanshub/Desktop/Capstone/docs/demo-video/audio/01b-superadmin-created.wav",
+    "duration": 15.233968
+  },
+  {
+    "id": "02-login",
+    "caption": "Tenant-scoped sign-in — institution slug + email + password",
+    "text": "Every other login is tenant scoped: institution slug, email, password. The slug picks the tenant. Auth service issues a signed token with the user id, role, and tenant baked into it. There's no gateway that vouches for you — each service verifies that signature itself. Zero trust.",
+    "wav": "/home/divanshub/Desktop/Capstone/docs/demo-video/audio/02-login.wav",
+    "duration": 19.116735
+  },
+  {
+    "id": "03-admin-dashboard",
+    "caption": "Admin — live tenant counters, fee structures, hostel setup",
+    "text": "Admin dashboard: live counters for users, invoices, allocations, and tickets, all scoped to this one institution. Fee structure management, hostel block setup, and the full user roster — warden, faculty, driver, canteen owner, students.",
+    "wav": "/home/divanshub/Desktop/Capstone/docs/demo-video/audio/03-admin-dashboard.wav",
+    "duration": 16.720045
+  },
+  {
+    "id": "04-admin-users",
+    "caption": "Admin — bulk deactivate users (soft delete, guardrailed)",
+    "text": "Admin can multi select and bulk deactivate users. It's a soft delete, not a hard delete, so the row stays for audit. Two guardrails are enforced on the server: you can't deactivate yourself, and you can't remove the tenant's last active admin.",
+    "wav": "/home/divanshub/Desktop/Capstone/docs/demo-video/audio/04-admin-users.wav",
+    "duration": 15.525896
+  },
+  {
+    "id": "05-admin-add-students",
+    "caption": "Admin — onboarding students, single or CSV bulk",
+    "text": "Onboarding is a single add form, or a C S V bulk upload for a whole cohort in one shot.",
+    "wav": "/home/divanshub/Desktop/Capstone/docs/demo-video/audio/05-admin-add-students.wav",
+    "duration": 5.31737
+  },
+  {
+    "id": "06-saga-intro",
+    "caption": "Demo — the hostel saga: hostel, finance, notification",
+    "text": "This next part is a distributed saga across three services: hostel, finance, and notification, coordinated entirely through events. No service ever calls another directly. Watch the sequence.",
+    "wav": "/home/divanshub/Desktop/Capstone/docs/demo-video/audio/06-saga-intro.wav",
+    "duration": 12.855601
+  },
+  {
+    "id": "07-student-request-room",
+    "caption": "Student — requests a room",
+    "text": "The student browses available rooms and submits a request.",
+    "wav": "/home/divanshub/Desktop/Capstone/docs/demo-video/audio/07-student-request-room.wav",
+    "duration": 3.494603
+  },
+  {
+    "id": "08-warden-approve",
+    "caption": "Warden — approves the request, picks a fee structure",
+    "text": "The warden approves it and picks a fee structure. This calls the exact same allocation path as a direct bulk allocate. Approval is just another entry point into the same saga. Under the hood, hostel service just emitted an allocation requested event, and finance service consumed it and raised an invoice, with no direct call between them.",
+    "wav": "/home/divanshub/Desktop/Capstone/docs/demo-video/audio/08-warden-approve.wav",
+    "duration": 20.334104
+  },
+  {
+    "id": "09-student-pay",
+    "caption": "Student — pays the invoice, saga confirms the seat",
+    "text": "The student pays. Finance emits a payment success event. Hostel correlates that back to the original allocation by invoice ID and confirms the seat. Notification service picks that up and writes the student's inbox message. Four services, one business transaction, and none of them ever blocked on another's uptime.",
+    "wav": "/home/divanshub/Desktop/Capstone/docs/demo-video/audio/09-student-pay.wav",
+    "duration": 19.708844
+  },
+  {
+    "id": "10-receipt",
+    "caption": "Receipt — signed PDF with a verifiable QR code",
+    "text": "Because payment succeeded, a P D F receipt was generated with a signed verification token, rendered as a Q R code.",
+    "wav": "/home/divanshub/Desktop/Capstone/docs/demo-video/audio/10-receipt.wav",
+    "duration": 7.604535
+  },
+  {
+    "id": "11-verify-receipt",
+    "caption": "Receipt verification — HMAC-signed, tamper-evident",
+    "text": "A warden or admin can scan that Q R code here. It's H MAC verified and tamper evident, cross checked against the server. This is a real receipt, confirmed valid.",
+    "wav": "/home/divanshub/Desktop/Capstone/docs/demo-video/audio/11-verify-receipt.wav",
+    "duration": 10.881905
+  },
+  {
+    "id": "12-saga-correctness",
+    "caption": "Correctness, proven not asserted — concurrency + broker outage",
+    "text": "This saga is order independent — even if the payment event arrives before the invoice event, it still resolves correctly — and it's idempotent under redelivery. I stress tested it separately: fifty threads racing for one seat, using real Postgres row locks, and exactly one thread wins. I also killed Rabbit M Q in the middle of a live saga. The write still succeeded, because the event is written to an outbox table inside the very same transaction as the business row, instead of being published inline. When the broker came back online, the backlog drained itself automatically — no manual replay, no lost events.",
+    "wav": "/home/divanshub/Desktop/Capstone/docs/demo-video/audio/12-saga-correctness.wav",
+    "duration": 38.586667
+  },
+  {
+    "id": "13-grievance-intro",
+    "caption": "Demo — ML-scored grievance auto-escalation",
+    "text": "Second saga: a grievance, scored by a dedicated machine learning service, automatically escalated to the warden if it's serious.",
+    "wav": "/home/divanshub/Desktop/Capstone/docs/demo-video/audio/13-grievance-intro.wav",
+    "duration": 7.511655
+  },
+  {
+    "id": "14-grievance-raise",
+    "caption": "Student — raises an urgent grievance",
+    "text": "The student files a ticket. Grievance service emits a created event, carrying just the free text and who raised it. The A I service, which is Fast A P I rather than Django because it's a pure scoring endpoint with no need for an O R M, consumes it.",
+    "wav": "/home/divanshub/Desktop/Capstone/docs/demo-video/audio/14-grievance-raise.wav",
+    "duration": 14.887347
+  },
+  {
+    "id": "15-ai-scoring",
+    "caption": "AI service — VADER sentiment + keyword urgency rules",
+    "text": "Scoring is VADER sentiment analysis plus keyword based urgency rules — deliberately lightweight, no heavy transformer model, so it runs on a laptop. Safety keywords like fire, or ragging, push urgency straight to critical, regardless of the sentiment score.",
+    "wav": "/home/divanshub/Desktop/Capstone/docs/demo-video/audio/15-ai-scoring.wav",
+    "duration": 15.895737
+  },
+  {
+    "id": "16-grievance-escalated",
+    "caption": "Auto-escalated to the warden + student notified",
+    "text": "The A I service emits a scored event. Grievance service auto escalates high and critical tickets straight to the warden's queue, and notification service writes the student a message. Same event driven pattern as the hostel saga, completely different services.",
+    "wav": "/home/divanshub/Desktop/Capstone/docs/demo-video/audio/16-grievance-escalated.wav",
+    "duration": 14.689977
+  },
+  {
+    "id": "17-canteen",
+    "caption": "Canteen — independent service, same payment rails",
+    "text": "Canteen is a fully separate service, unrelated to hostel or finance business logic, but it rides the same rails: menu management, an orders queue with a real status machine — placed, preparing, ready, completed — and checkout goes through the same payment integration students already used to pay hostel fees. One payment concern, reused across two unrelated domains.",
+    "wav": "/home/divanshub/Desktop/Capstone/docs/demo-video/audio/17-canteen.wav",
+    "duration": 22.966213
+  },
+  {
+    "id": "18-faculty-driver",
+    "caption": "Faculty & driver — stub services, honestly labeled",
+    "text": "Faculty and driver logins exist and are fully tenant and token aware, but exam, attendance, and full transport logic are intentionally stubs for this pass — working C R U D prototypes on the same foundation, not full business logic. Eight services were built deep, rather than thirteen services shallow, because the saga and the M L demo needed real depth to prove the architecture actually holds up under concurrency and failure, not just on the happy path.",
+    "wav": "/home/divanshub/Desktop/Capstone/docs/demo-video/audio/18-faculty-driver.wav",
+    "duration": 27.482494
+  },
+  {
+    "id": "19-multitenancy",
+    "caption": "Multi-tenancy — same tables, zero cross-tenant leakage",
+    "text": "Same login screen, different slug, completely disjoint data — different rooms, different invoices, different users — despite sharing the same Postgres instance and the same tables. Isolation is enforced by a custom manager that scopes every query to the tenant in the current request's token, not by convention, and not by the frontend being careful.",
+    "wav": "/home/divanshub/Desktop/Capstone/docs/demo-video/audio/19-multitenancy.wav",
+    "duration": 21.793605
+  },
+  {
+    "id": "20-observability",
+    "caption": "Observability — Prometheus + Grafana under real load",
+    "text": "Every Django service exposes Prometheus metrics: request rate, latency, error rate, and per tenant request count. This capture is from a real load run — around twenty eight hundred requests at roughly ten a second, across two tenants, with a P fifty of ten milliseconds, a P ninety five of thirty four, and zero server errors. That run is also what caught the gateway's rate limiter working, and the auth service's lockout working, correctly rejecting abuse.",
+    "wav": "/home/divanshub/Desktop/Capstone/docs/demo-video/audio/20-observability.wav",
+    "duration": 27.902132
+  },
+  {
+    "id": "21-close",
+    "caption": "Multi-tenant · zero-trust · event-driven · tested under failure",
+    "text": "To summarize the engineering, not just the interface: multi tenant with row level isolation, zero trust authentication verified independently by every service, sagas built on a transactional outbox and an idempotent inbox so no event is ever lost or double processed, tested under real concurrency, not just unit tests, and observable in production with Prometheus and Grafana. Code, tests, and the full C I pipeline are all in the repository.",
+    "wav": "/home/divanshub/Desktop/Capstone/docs/demo-video/audio/21-close.wav",
+    "duration": 27.250295
+  }
+]
