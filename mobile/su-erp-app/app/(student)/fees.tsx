@@ -5,7 +5,13 @@ import { Money } from '@/components/Money';
 import { OfflineBanner } from '@/components/OfflineBanner';
 import { Snackbar, useSnackbar } from '@/components/Snackbar';
 import { Body, Button, Card, Label, ListState, Screen, Title } from '@/components/ui';
-import { INVOICES_KEY, PaymentCancelled, useInvoices, usePayInvoice } from '@/features/fees/useInvoices';
+import {
+  INVOICES_KEY,
+  PaymentCancelled,
+  useInvoices,
+  usePayInvoice,
+} from '@/features/fees/useInvoices';
+import { pendingTotal } from '@/features/home/summary';
 import { cacheAge } from '@/lib/query/persister';
 
 const STATUS_STYLE: Record<string, string> = {
@@ -66,7 +72,7 @@ export default function FeesScreen() {
 
   const invoices = data?.results ?? [];
   const pending = invoices.filter((i) => i.status === 'pending');
-  const dues = pending.reduce((sum, i) => sum + Number(i.amount), 0);
+  const dues = pendingTotal(invoices);
 
   function onPay(invoiceId: string) {
     pay.mutate(invoiceId, {

@@ -1,6 +1,7 @@
 import type { Notification, Paginated } from '@api-types/index';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
+import { unreadCount } from '@/features/home/summary';
 import { fetchInbox, markRead } from '@/lib/api/notify';
 
 export const INBOX_KEY = ['notify', 'inbox'];
@@ -58,5 +59,5 @@ export function useMarkRead() {
 /** Unread count, for the home dashboard and the tab badge. */
 export function useUnreadCount(): number {
   const { data } = useInbox();
-  return (data?.results ?? []).filter((n) => !n.read).length;
+  return unreadCount(data?.results ?? []);
 }
