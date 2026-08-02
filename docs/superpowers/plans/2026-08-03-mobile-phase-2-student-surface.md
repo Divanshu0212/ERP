@@ -454,14 +454,28 @@ Create `shared/api-types/transport.ts`:
 export interface Route {
   id: string;
   name: string;
+  start_point: string;
+  end_point: string;
   created_at: string;
 }
+
+export type BookingStatus = 'booked' | 'cancelled';
 
 export interface Booking {
   id: string;
   student_user_code: string;
-  seat_number: number;
+  /** The backend field is seat_no, not seat_number — see transport/models.py. */
+  seat_no: number;
+  status: BookingStatus;
   created_at: string;
+}
+
+export interface BusSchedule {
+  id: string;
+  bus_no: string;
+  driver_id: string;
+  departure_time: string;
+  capacity: number;
 }
 ```
 
@@ -1479,7 +1493,12 @@ git commit -m "feat(mobile): add hostel allocation and room request screen"
 - Consumes: `request`, `Route`, `Booking`, `Paginated`, `OfflineError`.
 - Produces: `fetchRoutes()`, `fetchSeats(routeId)`, `bookSeat(routeId, seatNumber)` — online-only (a seat is a scarce resource; a queued booking would claim a seat someone else already took).
 
-- [ ] **Step 1: Write the failing test**
+- [ ] **Step 1: Confirm the booking payload the backend expects**
+
+Run: `grep -n "class BookingCreateView" -A 30 services/transport-service/transport/views.py`
+Record whether the body keys are `schedule_id`/`seat_no` (likely, given `Booking.schedule` and `Booking.seat_no` in the model) or something else, and whether `idempotency_key` is accepted. Use those exact keys in the module below, adjusting the test to match. The backend is the source of truth.
+
+- [ ] **Step 2: Write the failing test**
 
 Create `mobile/su-erp-app/src/lib/api/__tests__/transport.test.ts`:
 
@@ -1504,28 +1523,37 @@ test('fetchRoutes hits the routes endpoint', async () => {
 });
 
 test('fetchSeats hits the per-route seats endpoint', async () => {
-  request.mockResolvedValue({ taken: [] });
+  request.mockResolvedValue({ taken: [], schedules: [] });
   await fetchSeats('r1');
   expect(request).toHaveBeenCalledWith('/api/v1/transport/routes/r1/seats');
 });
 
+test('bookSeat posts the schedule id and seat number', async () => {
+  request.mockResolvedValue({ id: 'b1' });
+
+  await bookSeat('sched-1', 4);
+
+  const body = JSON.parse(request.mock.calls[0][1].body);
+  expect(body).toEqual({ schedule_id: 'sched-1', seat_no: 4 });
+});
+
 test('bookSeat refuses to run offline', async () => {
   useConnectivity.setState({ online: false });
-  await expect(bookSeat('r1', 4)).rejects.toBeInstanceOf(OfflineError);
+  await expect(bookSeat('sched-1', 4)).rejects.toBeInstanceOf(OfflineError);
 });
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [ ] **Step 3: Run it to verify it fails**
 
 Run: `cd mobile/su-erp-app && npx jest src/lib/api/__tests__/transport.test.ts`
 Expected: FAIL — module missing
 
-- [ ] **Step 3: Write the API module**
+- [ ] **Step 4: Write the API module**
 
 Create `mobile/su-erp-app/src/lib/api/transport.ts`:
 
 ```ts
-import type { Booking, Paginated, Route } from '@api-types/index';
+import type { Booking, BusSchedule, Paginated, Route } from '@api-types/index';
 
 import { useConnectivity } from '../net/connectivity';
 import { request } from './client';
@@ -1535,8 +1563,16 @@ export function fetchRoutes(): Promise<Paginated<Route>> {
   return request<Paginated<Route>>('/api/v1/transport/routes');
 }
 
-export function fetchSeats(routeId: string): Promise<{ taken: number[] }> {
-  return request<{ taken: number[] }>(`/api/v1/transport/routes/${routeId}/seats`);
+/**
+ * Per-route seat availability. Confirm the exact response shape in Step 1 —
+ * it must supply both the schedules on this route and which seats are gone.
+ */
+export function fetchSeats(
+  routeId: string,
+): Promise<{ taken: number[]; schedules: BusSchedule[] }> {
+  return request<{ taken: number[]; schedules: BusSchedule[] }>(
+    `/api/v1/transport/routes/${routeId}/seats`,
+  );
 }
 
 /**
@@ -1545,17 +1581,17 @@ export function fetchSeats(routeId: string): Promise<{ taken: number[] }> {
  * claiming a seat that is very likely already gone, and the student would
  * believe they had one.
  */
-export async function bookSeat(routeId: string, seatNumber: number): Promise<Booking> {
+export async function bookSeat(scheduleId: string, seatNo: number): Promise<Booking> {
   if (!useConnectivity.getState().online) throw new OfflineError();
 
   return request<Booking>('/api/v1/transport/bookings', {
     method: 'POST',
-    body: JSON.stringify({ route_id: routeId, seat_number: seatNumber }),
+    body: JSON.stringify({ schedule_id: scheduleId, seat_no: seatNo }),
   });
 }
 ```
 
-- [ ] **Step 4: Write the hook**
+- [ ] **Step 5: Write the hook**
 
 Create `mobile/su-erp-app/src/features/transport/useTransport.ts`:
 
@@ -1579,16 +1615,22 @@ export function useSeats(routeId: string | null) {
   });
 }
 
-export function useBookSeat(routeId: string | null) {
+/**
+ * A booking belongs to a BusSchedule (a specific bus at a specific time),
+ * not to a Route — see transport/models.py Booking.schedule. The route
+ * selection above narrows which schedules to show; the schedule is what
+ * actually gets booked.
+ */
+export function useBookSeat(scheduleId: string | null, routeId: string | null) {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: (seatNumber: number) => bookSeat(routeId as string, seatNumber),
+    mutationFn: (seatNo: number) => bookSeat(scheduleId as string, seatNo),
     onSuccess: () => client.invalidateQueries({ queryKey: seatsKey(routeId ?? '') }),
   });
 }
 ```
 
-- [ ] **Step 5: Write the screen**
+- [ ] **Step 6: Write the screen**
 
 Create `mobile/su-erp-app/app/(student)/transport.tsx`:
 
@@ -1604,9 +1646,10 @@ const SEAT_COUNT = 40;
 
 export default function TransportScreen() {
   const [routeId, setRouteId] = useState<string | null>(null);
+  const [scheduleId, setScheduleId] = useState<string | null>(null);
   const { data: routes } = useRoutes();
   const { data: seats } = useSeats(routeId);
-  const book = useBookSeat(routeId);
+  const book = useBookSeat(scheduleId, routeId);
 
   const taken = new Set(seats?.taken ?? []);
 
@@ -1619,7 +1662,10 @@ export default function TransportScreen() {
         {(routes?.results ?? []).map((route) => (
           <Pressable
             key={route.id}
-            onPress={() => setRouteId(route.id)}
+            onPress={() => {
+              setRouteId(route.id);
+              setScheduleId(null);
+            }}
             style={{
               padding: 12,
               borderRadius: 8,
@@ -1627,11 +1673,35 @@ export default function TransportScreen() {
             }}
           >
             <Text>{route.name}</Text>
+            <Text style={{ color: '#6b7280', fontSize: 12 }}>
+              {route.start_point} → {route.end_point}
+            </Text>
           </Pressable>
         ))}
       </View>
 
       {routeId ? (
+        <View style={{ padding: 16, gap: 8 }}>
+          <Text style={{ fontSize: 18, fontWeight: '600' }}>Departures</Text>
+          {(seats?.schedules ?? []).map((schedule) => (
+            <Pressable
+              key={schedule.id}
+              onPress={() => setScheduleId(schedule.id)}
+              style={{
+                padding: 12,
+                borderRadius: 8,
+                backgroundColor: scheduleId === schedule.id ? '#dbeafe' : '#f3f4f6',
+              }}
+            >
+              <Text>
+                Bus {schedule.bus_no} · {new Date(schedule.departure_time).toLocaleTimeString()}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+      ) : null}
+
+      {scheduleId ? (
         <View style={{ padding: 16, flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
           {Array.from({ length: SEAT_COUNT }, (_, i) => i + 1).map((seat) => (
             <Pressable
@@ -1661,12 +1731,12 @@ export default function TransportScreen() {
 }
 ```
 
-- [ ] **Step 6: Run the tests and typecheck**
+- [ ] **Step 7: Run the tests and typecheck**
 
 Run: `cd mobile/su-erp-app && npx jest src/lib/api/__tests__/transport.test.ts && npx tsc --noEmit`
-Expected: 3 tests PASS, no type errors
+Expected: 4 tests PASS, no type errors
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 8: Commit**
 
 ```bash
 git add mobile/su-erp-app/src/lib/api/transport.ts mobile/su-erp-app/src/features/transport/ mobile/su-erp-app/app/\(student\)/transport.tsx mobile/su-erp-app/src/lib/api/__tests__/transport.test.ts
