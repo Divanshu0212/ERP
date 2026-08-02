@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { AccessibilityInfo, Easing, LayoutAnimation, Platform, UIManager } from 'react-native';
+import { AccessibilityInfo, Easing } from 'react-native';
 
 /**
  * Motion runs on RN core Animated rather than Reanimated: react-native-worklets
@@ -27,22 +27,12 @@ export const DURATION = {
 /** Press-in scale. Deep enough to feel, shallow enough not to wobble. */
 export const PRESS_SCALE = 0.97;
 
-if (Platform.OS === 'android') {
-  UIManager.setLayoutAnimationEnabledExperimental?.(true);
-}
-
 /**
- * Animates the next layout change — a list row arriving, a section expanding.
- * Call immediately before the state update that changes the layout.
+ * There is deliberately no LayoutAnimation helper here. This app runs on the
+ * New Architecture, where LayoutAnimation is a no-op and
+ * setLayoutAnimationEnabledExperimental warns as much on every launch.
+ * Animate layout changes with Animated values on the moving view instead.
  */
-export function animateNextLayout(): void {
-  LayoutAnimation.configureNext({
-    duration: DURATION.base,
-    create: { type: 'easeOut', property: 'opacity' },
-    update: { type: 'easeInEaseOut' },
-    delete: { type: 'easeIn', property: 'opacity' },
-  });
-}
 
 /**
  * Tracks the system "Remove animations" setting. Material requires motion to

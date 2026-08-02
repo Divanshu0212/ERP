@@ -47,7 +47,11 @@
     "lint": "expo lint"
   },
   "jest": {
-    "preset": "jest-expo"
+    "preset": "jest-expo",
+    "moduleNameMapper": {
+      "^@/(.*)$": "<rootDir>/src/$1",
+      "^@api-types/(.*)$": "<rootDir>/../../shared/api-types/$1"
+    }
   },
   "overrides": {
     "jest-mock": "30.4.1",
