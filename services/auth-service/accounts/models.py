@@ -270,3 +270,37 @@ class LoginAudit(models.Model):
 
     def __str__(self):
         return f"{self.email} @ {self.timestamp} ({'ok' if self.success else 'fail'})"
+
+
+class Device(models.Model):
+    """A mobile device bound to one user.
+
+    The app generates ``device_id`` once and keeps it in SecureStore, so it
+    survives reinstall-free relaunches and identifies the same physical
+    device across logins. Refresh-token chains are bound to a device
+    (see ``RefreshTokenRecord.device``), which is what makes per-device
+    revocation possible. This table doubles as the push-token registry — one
+    row per device serves both concerns.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(Institution, on_delete=models.PROTECT, related_name="devices")
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="devices")
+    device_id = models.CharField(max_length=64)
+    platform = models.CharField(max_length=16)
+    model_name = models.CharField(max_length=128, blank=True, default="")
+    push_token = models.CharField(max_length=255, blank=True, default="")
+    is_stale = models.BooleanField(default=False)
+    last_seen_at = models.DateTimeField(auto_now=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["user", "device_id"], name="unique_device_per_user"),
+        ]
+        indexes = [
+            models.Index(fields=["tenant", "user"], name="device_tenant_user"),
+        ]
+
+    def __str__(self):
+        return f"{self.platform}:{self.device_id} ({self.user_id})"
