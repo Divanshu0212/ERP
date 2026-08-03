@@ -365,3 +365,109 @@ AsyncStorage instead.
 
 **`LayoutAnimation` is a no-op** on the New Architecture and warns on every
 launch. Animate layout changes with `Animated` values instead.
+
+## 6. Phase 3 — field roles (warden, driver, canteen owner)
+
+Three staff surfaces plus the three backend endpoints they depend on:
+`VisitorLog` in hostel-service, driver trips/breadcrumbs in transport-service,
+and `PATCH /grievance/<id>/status` in grievance-service.
+
+### Test suites
+
+```bash
+cd services/hostel-service    && python -m pytest -q   # 94 passed, 4 pre-existing failures
+cd ../transport-service       && python -m pytest -q   # 33 passed
+cd ../grievance-service       && python -m pytest -q   # 24 passed
+cd mobile/su-erp-app && npx jest && npx tsc --noEmit    # 99 passed / 19 suites, no type errors
+```
+
+The four hostel failures (`test_allocate`, `test_allocate_with_fee`,
+`test_room_request_approval` ×2) **predate this phase** and are time-bombed
+fixtures, not regressions: they hard-code `due_date: "2026-08-01"`, which
+`validate_future_due_date` now correctly rejects as being in the past. They
+fail identically on a stashed tree.
+
+### Bringing the stack up
+
+Transport-service is behind the `full` profile. New migrations are baked into
+the images, so the three changed services must be **rebuilt**, not just
+restarted — `manage.py migrate` against a stale image reports "No migrations to
+apply" while the table is genuinely missing.
+
+```bash
+docker compose -f infra/docker-compose.yml build hostel-service grievance-service
+docker compose -f infra/docker-compose.yml --profile full build transport-service
+docker compose -f infra/docker-compose.yml --profile full up -d \
+  hostel-service grievance-service transport-service
+```
+
+### Verified against the live stack (gateway :8080)
+
+Token minted through a real login — see `services/hostel-service/.claude/skills/verify`.
+
+| Flow | Check | Result |
+| --- | --- | --- |
+| Warden | `POST /hostel/visitors` | 201, `checked_out_at: null` |
+| Warden | `POST /hostel/visitors/<id>/checkout` | 200, exit time stamped |
+| Warden | checkout twice | 400 "already checked out" |
+| Warden | `GET /hostel/visitors` after checkout | empty (still-inside filter) |
+| Warden | `GET /hostel/visitors?all=true` | 1 row, full history |
+| Warden | grievance `open → in_progress → resolved` | 200 each |
+| Warden | `resolved → open` | 400 "Illegal transition" |
+| Warden | unknown status `banana` | 400 |
+| Driver | `POST /schedules/<id>/trips` | 201, trip active |
+| Driver | start a second trip on same schedule | 400 |
+| Driver | `GET /routes/<id>/live` before any breadcrumb | 404 |
+| Driver | breadcrumb batch | 201, points stored |
+| Driver | `GET /routes/<id>/live` after batch | newest point returned |
+| Driver | `POST /trips/<id>/end` | 200, `ended_at` set |
+| Driver | end twice | 400 |
+| Driver | live position after end | 404 (dot dropped, not left to expire) |
+| Owner | `PATCH /menu-items/<id>/` availability + price | 200, price returns as string `"75.50"` |
+| Owner | order `placed → preparing → ready → completed` | 200 each |
+| Owner | `completed → preparing` | 400 "Illegal transition" |
+| Owner | student attempting a status change | 403 |
+
+### Breadcrumb replay across a signal gap
+
+The check that matters for the offline queue: a replayed batch must not
+duplicate the trail, and the trail must keep its real shape rather than
+collapsing into the reconnect instant.
+
+Batch 1 sent `08:01:00` and `08:01:15`. Batch 2 replayed `08:01:00` and added
+`08:02:00` and `08:03:00` (spanning a two-minute tunnel). Five points
+submitted, **four rows stored** — the replayed point deduplicated against the
+`(trip, recorded_at)` uniqueness constraint:
+
+```
+2026-08-04T08:01:00+00:00  12.971599 77.594566
+2026-08-04T08:01:15+00:00  12.972000 77.595000
+2026-08-04T08:02:00+00:00  12.973000 77.596000
+2026-08-04T08:03:00+00:00  12.974000 77.597000
+```
+
+Timestamps are device-stamped, so the gap survives the replay intact.
+
+### Deviation from the plan: the warden roster endpoint
+
+The plan specified reusing `fetchMyAllocations` (`GET /hostel/allocations/mine`)
+for the block roster, on the assumption that a warden's token returns the whole
+block. It does not — that view is `role_required("student")` and answers "where
+do I live". Verified against the running stack:
+
+```
+GET /hostel/allocations/mine          (staff token) -> 403
+GET /hostel/allocations?status=confirmed (staff token) -> 200
+```
+
+The app therefore uses `fetchBlockRoster()` against the tenant-scoped
+`AllocationListView`, which its own docstring calls "what a warden needs".
+
+### Not yet verified
+
+The on-device walkthrough (Task 7 steps 3–4: running each role on the phone
+over `adb reverse`, and airplane-mode queue replay per role) has **not** been
+performed — no device was attached to this session. The API-level evidence
+above covers every endpoint those steps exercise, but the GPS permission
+prompt, the `watchPosition` stream, and the queue drain on reconnect still
+need a real handset before this phase is signed off as shipped.
