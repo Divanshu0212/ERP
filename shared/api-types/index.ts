@@ -6,3 +6,4 @@ export * from './grievance';
 export * from './hostel';
 export * from './notify';
 export * from './transport';
+export * from './warden';
