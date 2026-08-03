@@ -1,8 +1,20 @@
 import type { ApiEnvelope, TokenPair } from '@api-types/index';
 
 import { clearRefreshToken, readRefreshToken, saveRefreshToken } from '../auth/storage';
+import { currentBaseUrl, invalidateBaseUrl, resolveBaseUrl } from './endpoint';
 
-export const BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL ?? 'http://localhost:8080';
+/**
+ * The gateway origin, resolved at runtime — see ./endpoint.
+ *
+ * Was a build-time constant. It is a function now because the app has to
+ * reach the same backend over a Cloudflare tunnel from the outside world and
+ * over `adb reverse` on the dev machine, and a quick tunnel's hostname
+ * changes on every restart. Callers that can await should prefer
+ * `resolveBaseUrl()`; this is the synchronous best-known answer.
+ */
+export function baseUrl(): string {
+  return currentBaseUrl();
+}
 
 /**
  * The access token is held here, in memory, for exactly this reason: it has a
@@ -104,6 +116,10 @@ async function fetchWithTimeout(url: string, init: RequestInit): Promise<Respons
     return response;
   } catch (error) {
     onUnreachable?.();
+    // The endpoint we picked is no longer answering. Forget it so the next
+    // call re-probes: the tunnel may have restarted with a new hostname, or
+    // the phone may have been unplugged from `adb reverse`.
+    invalidateBaseUrl();
     if ((error as Error)?.name === 'AbortError') {
       throw new NetworkError('The server took too long to respond.');
     }
@@ -117,7 +133,7 @@ async function refreshTokenPair(): Promise<TokenPair> {
   const refresh = await readRefreshToken();
   if (!refresh) throw new ApiError('No refresh token.', 401);
 
-  const response = await fetchWithTimeout(`${BASE_URL}/api/v1/auth/refresh`, {
+  const response = await fetchWithTimeout(`${await resolveBaseUrl()}/api/v1/auth/refresh`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-Request-Id': requestId() },
     body: JSON.stringify({ refresh }),
@@ -166,7 +182,7 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
     if (accessToken) headers.Authorization = `Bearer ${accessToken}`;
     if (idempotencyKey) headers['Idempotency-Key'] = idempotencyKey;
 
-    return fetchWithTimeout(`${BASE_URL}${path}`, { ...init, headers });
+    return fetchWithTimeout(`${await resolveBaseUrl()}${path}`, { ...init, headers });
   };
 
   let response = await send();

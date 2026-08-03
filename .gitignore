@@ -30,3 +30,5 @@ mobile/su-erp-app/dist/
 
 # Uploaded grievance evidence (local dev; object storage in deployment)
 services/*/media/
+infra/tunnel-url.txt
+infra/tunnel.log

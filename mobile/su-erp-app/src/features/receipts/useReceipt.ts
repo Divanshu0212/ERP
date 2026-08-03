@@ -4,7 +4,8 @@ import { readAsStringAsync } from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import { useState } from 'react';
 
-import { BASE_URL, getAccessToken, refreshSession } from '@/lib/api/client';
+import { getAccessToken, refreshSession } from '@/lib/api/client';
+import { resolveBaseUrl } from '@/lib/api/endpoint';
 import { receiptPdfUrl } from '@/lib/api/finance';
 
 /**
@@ -15,7 +16,7 @@ import { receiptPdfUrl } from '@/lib/api/finance';
  * would not work either — the browser carries no access token.
  */
 async function downloadReceipt(invoiceId: string): Promise<File> {
-  const url = `${BASE_URL}${receiptPdfUrl(invoiceId)}`;
+  const url = `${await resolveBaseUrl()}${receiptPdfUrl(invoiceId)}`;
 
   const attempt = () =>
     File.downloadFileAsync(url, new File(Paths.cache, `receipt-${invoiceId}.pdf`), {

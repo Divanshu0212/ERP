@@ -2,7 +2,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Directory, File, Paths } from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
 
-import { BASE_URL, getAccessToken, refreshSession } from '@/lib/api/client';
+import { getAccessToken, refreshSession } from '@/lib/api/client';
+import { resolveBaseUrl } from '@/lib/api/endpoint';
 import { receiptPdfUrl } from '@/lib/api/finance';
 
 export const VAULT_KEY = ['vault', 'documents'];
@@ -55,9 +56,10 @@ export function useVault() {
  */
 export async function downloadDocument(url: string, name: string): Promise<string> {
   const target = new File(vaultDirectory(), name);
+  const origin = await resolveBaseUrl();
 
   const attempt = () =>
-    File.downloadFileAsync(`${BASE_URL}${url}`, target, {
+    File.downloadFileAsync(`${origin}${url}`, target, {
       headers: { Authorization: `Bearer ${getAccessToken() ?? ''}` },
       idempotent: true,
     });

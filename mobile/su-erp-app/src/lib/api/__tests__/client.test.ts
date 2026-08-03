@@ -13,6 +13,18 @@ jest.mock('expo-secure-store', () => ({
   }),
 }));
 
+/**
+ * Pinned so the endpoint probe does not issue its own `/health` fetch here —
+ * that would consume the `mockResolvedValueOnce` queued for the request under
+ * test and shift every `mock.calls[0]` assertion. Probing has its own tests in
+ * endpoint.test.ts.
+ */
+jest.mock('../endpoint', () => ({
+  currentBaseUrl: () => 'http://localhost:8080',
+  resolveBaseUrl: async () => 'http://localhost:8080',
+  invalidateBaseUrl: jest.fn(),
+}));
+
 function envelope(data: unknown, ok = true) {
   return {
     ok: true,
