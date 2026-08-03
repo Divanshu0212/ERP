@@ -95,6 +95,13 @@ export default function StudentHome() {
           />
 
           <Shortcut
+            href="/(student)/attendance"
+            icon="checkbox"
+            label="Attendance"
+            detail="Mark yourself present and see your percentage"
+          />
+
+          <Shortcut
             href="/(student)/pass"
             icon="qr-code"
             label="Bus pass"
