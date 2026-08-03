@@ -23,6 +23,7 @@ from rest_framework.generics import ListAPIView
 from rest_framework.views import APIView
 from suerp_common.envelope import fail, ok
 from suerp_common.outbox import publish_event
+from suerp_common.permissions import role_required
 from suerp_common.tenancy import get_current_tenant
 
 # Roles that may see/retrieve every ticket in their tenant (not just their own).
@@ -93,3 +94,50 @@ class GrievanceDetailView(APIView):
             return fail("Not permitted to view this grievance.", status=403)
 
         return ok(TicketSerializer(ticket).data)
+
+
+#: Legal status moves, over Ticket.Status (open/escalated/in_progress/
+#: resolved — there is no 'closed'). Resolution is terminal: a resolved
+#: ticket never reopens, because the 7-day media purge (see the mobile
+#: spec) is scheduled against its resolution time, and reopening would
+#: promise evidence that is already on its way to being deleted.
+_ALLOWED_STATUS_TRANSITIONS = {
+    "open": {"escalated", "in_progress", "resolved"},
+    "escalated": {"in_progress", "resolved"},
+    "in_progress": {"resolved"},
+    "resolved": set(),
+}
+
+
+class GrievanceStatusView(APIView):
+    """PATCH /api/v1/grievance/<id>/status — warden moves a ticket forward."""
+
+    permission_classes = [role_required("warden", "admin")]
+
+    def patch(self, request, ticket_id):
+        new_status = request.data.get("status")
+        valid = set(_ALLOWED_STATUS_TRANSITIONS)
+        if new_status not in valid:
+            return fail(
+                "Invalid status.",
+                errors={"status": f"Must be one of {sorted(valid)}."},
+                status=400,
+            )
+
+        # objects is tenant-scoped, so another tenant's ticket is simply
+        # not found — no cross-tenant existence leak.
+        try:
+            ticket = Ticket.objects.get(id=ticket_id)
+        except Ticket.DoesNotExist:
+            return fail("Grievance not found.", status=404)
+
+        if new_status not in _ALLOWED_STATUS_TRANSITIONS[ticket.status]:
+            return fail(
+                f"Cannot transition from '{ticket.status}' to '{new_status}'.",
+                errors={"status": "Illegal transition."},
+                status=400,
+            )
+
+        ticket.status = new_status
+        ticket.save(update_fields=["status"])
+        return ok(TicketSerializer(ticket).data, message="Status updated.")
