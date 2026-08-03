@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { DashboardShell } from "@/components/DashboardShell";
+import { LiveSessionSection } from "./LiveSessionSection";
 import { DataPanel } from "@/components/DataPanel";
 import { api, ApiError } from "@/lib/api";
 import { listItems } from "@/lib/paginate";
@@ -330,6 +331,9 @@ export default function FacultyDashboard() {
   return (
     <DashboardShell title="Faculty" role="faculty">
       <div className="space-y-6">
+        {/* Geofenced attendance first: it is the live, time-critical one —
+            the manual roll below exists for corrections after the fact. */}
+        <LiveSessionSection />
         <AttendanceSection />
         <ExamSection />
       </div>
