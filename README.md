@@ -21,6 +21,7 @@ rooms, pay fees, raise grievances, and track their records — all through one w
 - [Demo 1 — the hostel saga](#demo-1--the-hostel-saga-hostel--finance--notification)
 - [Demo 2 — the ML grievance escalation](#demo-2--the-ml-grievance-escalation-grievance--ai--notification)
 - [Screenshots](#screenshots)
+- [Mobile app](#mobile-app)
 - [Correctness under adversarial conditions](#correctness-under-adversarial-conditions)
 - [Multi-tenancy](#multi-tenancy)
 - [Zero-trust identity](#zero-trust-identity)
@@ -113,14 +114,14 @@ reached through the gateway on `:8080` at `/api/v1/...`.
 | ai-service           | Sentiment/urgency scoring, chatbot intent       | `/api/v1/ai/`            | FastAPI | full   |
 | canteen-service      | Menu, orders & Razorpay checkout                | `/api/v1/menu-items/`, `/api/v1/orders/` | Django | full |
 | student-service      | Student master records                          | `/api/v1/students/`      | Django  | stub   |
-| attendance-service   | Attendance tracking                             | `/api/v1/attendance/`    | Django  | stub   |
+| attendance-service   | Geofenced sessions, rolling codes, marks        | `/api/v1/attendance/`    | Django  | full   |
 | exam-service         | Exams & results                                 | `/api/v1/exams/`         | Django  | stub   |
 | library-service      | Books & lending                                 | `/api/v1/books/`         | Django  | stub   |
 | placement-service    | Placement drives                                | `/api/v1/placements/`    | Django  | stub   |
 | analytics-service    | Cross-service metrics                           | `/api/v1/metrics/`       | Django  | stub   |
 
 "stub" services expose working CRUD prototypes on the tenant/JWT/event foundation;
-the eight "full" services carry the complete business logic and the two demo flows.
+the nine "full" services carry the complete business logic and the two demo flows.
 
 ---
 
@@ -400,8 +401,13 @@ pay through the same Razorpay checkout as fees.
 | --- | --- |
 | ![Faculty](docs/screenshots/faculty-dashboard.png) | ![Driver](docs/screenshots/driver-dashboard.png) |
 
-Faculty/exam and attendance endpoints 404 here — those are prototype/stub services (see
+Exam endpoints 404 here — that is still a prototype/stub service (see
 [`docs/REMAINING_MODULES.md`](docs/REMAINING_MODULES.md) for what's fully built vs. stubbed).
+Attendance is no longer a stub: the faculty page now carries a live geofenced
+session console (open a session, project the rotating code, watch the roster
+fill, close it) backed by `attendance-service`. Students mark from the mobile
+app — see [Mobile app](#mobile-app). The manual roll form above it still calls a
+route that does not exist, and is a known gap.
 
 ### Monitoring under load
 
@@ -436,6 +442,90 @@ docker compose -f infra/docker-compose.yml --profile observability up -d prometh
 Prometheus at `http://localhost:9090` (all 14 targets healthy), Grafana at
 `http://localhost:3000` (admin/admin). Note that Grafana publishes `3000`, the same port
 as the Next.js dev server — run one at a time locally, or remap one of them.
+
+---
+
+## Mobile app
+
+An Expo / React Native app in [`mobile/su-erp-app`](mobile/su-erp-app), sharing
+the gateway, the JWT scheme, and the `shared/api-types` contracts with the web
+dashboard. It is not a wrapper around the web app: it exists for the eight
+things a browser on a campus cannot do.
+
+**Design target:** mid-range Android phones, one-handed, outdoors in daylight,
+on a network that drops. Tokens in `tailwind.config.js` are chosen for that
+scene rather than for a mockup.
+
+### Four roles
+
+| Role | What the app is for |
+| --- | --- |
+| **Student** | fees, hostel, canteen, bus, grievances, attendance, passes, documents |
+| **Warden** | hostel approvals and visitor logging at the door |
+| **Driver** | run a trip, broadcast position, scan passes at the door |
+| **Canteen owner** | the live order board, menu availability, scan pickups |
+
+Faculty, admin, and superadmin stay on the web dashboard — including the
+geofenced attendance console faculty use to open a session.
+
+### The eight hardware-only features
+
+1. **QR bus pass** — a capability token that re-mints every 30 seconds, so a
+   screenshot is stale before it can be forwarded. The driver's scanner
+   verifies it against a cached key with **no network at all**, and every
+   nonce is spent exactly once, so a replayed code is refused at the door.
+2. **Geofenced attendance** — a student is marked present only from inside the
+   room's circle, with the 15-second rotating code on the faculty's screen,
+   once. Mocked locations are refused *and recorded*.
+3. **Live bus map** — the student watches the bus move; the driver's phone is
+   the GPS source, batching breadcrumbs through tunnels.
+4. **Camera-first grievances** — photograph the broken fan. The blob is deleted
+   7 days after the ticket resolves; the metadata (`sha256`, `captured_at`,
+   `purged_at`) is kept forever, so the log still reads "1 attachment, purged
+   on the 9th".
+5. **Canteen pickup tokens** — the counter scans the student's code to complete
+   an order, so "collected" means a real handoff rather than a stray tap.
+6. **Push notifications** — behind a swappable channel interface; the in-app
+   inbox stays the source of truth and a push outage never fails a consumer.
+7. **Offline document vault** — receipts saved to the device's document
+   directory. The list reads the folder, not the API, so it works in airplane
+   mode. That is the whole feature.
+8. **Home-screen widgets** — **not shipped.** They need native targets and a
+   custom dev build; this project runs on Expo Go.
+
+### Offline model
+
+Field roles work where signal dies, so mutations that genuinely happen in dead
+zones are queued in SQLite and replayed on reconnect, carrying their id as an
+`Idempotency-Key`. Photos queue separately and the local file is deleted only
+after the server confirms receipt.
+
+Two things deliberately **never** queue: **payments**, because a fee payment
+that silently fires an hour later is worse than one that fails now; and
+**pickup scans**, because a scan replayed later would assert a handoff nobody
+witnessed.
+
+Reachability is not the same as connectivity — a phone with full bars inside a
+hostel block can still have no route to the gateway. The client applies a 12s
+deadline and treats "unreachable" exactly like offline.
+
+### Constraints worth knowing
+
+**`react-native-reanimated` and `react-native-worklets` are blocked** at the
+Metro resolver. Expo Go ships its own prebuilt `libworklets.so`, and importing
+reanimated initialises that native runtime against a mismatched JS side,
+segfaulting on launch. Motion uses RN core `Animated` with
+`useNativeDriver: true`. Removing the block needs a custom dev build.
+
+**Push cannot be tested in Expo Go** — SDK 53 removed Android remote push from
+it. `expo-notifications` is imported lazily so this never affects app launch.
+
+### Docs
+
+- Spec: [`docs/superpowers/specs/2026-08-02-mobile-app-design.md`](docs/superpowers/specs/2026-08-02-mobile-app-design.md)
+- Runbook, gotchas, and what is *not* yet device-verified: [`docs/RUNBOOK-mobile.md`](docs/RUNBOOK-mobile.md)
+- Phase plans: [`docs/superpowers/plans/`](docs/superpowers/plans/) — foundation,
+  student flows, field roles, and hardware features
 
 ---
 

@@ -536,3 +536,159 @@ The three staff shells have **no sign-out path** — only the student shell has 
 Profile tab. Switching roles on a device currently needs
 `adb shell pm clear host.exp.exponent`. Worth a shared header action in a
 later phase.
+
+---
+
+# Phase 4 — hardware features
+
+Eight capabilities the web app cannot have: QR e-passes with offline
+verification, geofenced attendance, the live bus map, camera-first grievances
+with auto-purging media, canteen pickup tokens, push notifications, the
+offline document vault, and home-screen widgets.
+
+## What shipped, and what did not
+
+| Feature | Backend | App | Status |
+| --- | --- | --- | --- |
+| QR bus pass + scan | transport-service | student `pass`, driver `scan` | shipped |
+| Geofenced attendance | attendance-service | student `attendance` | shipped |
+| Faculty session console | attendance-service | **web** `/faculty` | shipped |
+| Camera grievance + purge | grievance-service | student `grievance` | shipped |
+| Canteen pickup token | canteen-service | student `pickup`, owner `scan` | shipped |
+| Push notifications | notification-service | `lib/push/register.ts` | shipped, off by default |
+| Live bus map | (Phase 3 endpoint) | student `transport` | shipped |
+| Document vault | (existing receipt PDFs) | student `vault` | shipped |
+| Home-screen widgets | — | — | **deferred** |
+
+**Widgets are deferred.** They need iOS/Android native targets and therefore a
+custom dev build; this project runs on Expo Go and has no `eas.json`. The plan
+anticipated this (Task 10 Step 4) and noted widgets have no backend dependency,
+so deferring them blocks nothing.
+
+## Faculty attendance — who opens a session
+
+Geofenced attendance needs someone to open the session and project the
+rotating code. `Role.FACULTY` existed in auth-service but had no console for
+it, so this phase added one to the **web** dashboard (`/faculty`), not the
+mobile app:
+
+- open a session pinned to the room's coordinates (or the browser's location)
+- the 6-digit code at projector size, polled every 5s, rotating every 15s
+- the live roster of who has marked, polled every 10s
+- close the session
+
+Two endpoints were added for it: `GET /api/v1/attendance/sessions` (the
+caller's own sessions) and `GET /api/v1/attendance/sessions/<id>/marks` (the
+roster, faculty/admin only).
+
+The pre-existing manual roll on that page still calls
+`/api/v1/attendance/records`, which **does not exist** — the route is
+`/api/v1/attendance/`. That 404 predates this phase and was left alone.
+
+## Test suites
+
+```bash
+PY=.venv/bin/python
+for s in shared/libs/suerp_common services/transport-service \
+         services/attendance-service services/grievance-service \
+         services/canteen-service services/notification-service; do
+  (cd "$s" && ../../../$PY -m pytest -q)   # use an absolute path; depths differ
+done
+```
+
+Observed, all green:
+
+```
+shared/libs/suerp_common        27 passed
+services/transport-service      41 passed   (8 new)
+services/attendance-service     15 passed   (13 new)
+services/grievance-service      33 passed   (9 new)
+services/canteen-service        20 passed   (7 new)
+services/notification-service   19 passed   (10 new)
+frontend/su-erp-web             67 passed   (4 new)
+mobile/su-erp-app              114 passed   (5 new), tsc clean
+```
+
+Every other backend service was re-run unchanged and still passes (hostel's 4
+skips are the pre-existing Postgres-only concurrency tests).
+
+## NOT yet verified on a device
+
+**Everything below is unverified on real hardware.** The suites above prove
+the logic; they do not prove the app runs, because a passing bundle has been a
+launch-crashing state in this repo before. A physical device is required — an
+emulator cannot exercise camera, GPS, or push honestly.
+
+- **QR pass:** open the pass screen, confirm the code re-renders within 30s,
+  scan from the driver device, confirm acceptance, then re-scan the same
+  screenshot and confirm a 409.
+- **Attendance:** open a session from the web `/faculty` console, mark from
+  inside the room, then walk outside the radius and confirm refusal. Also
+  confirm the roster row appears on the console within ~10s.
+- **Live bus:** start a driver trip, confirm the student map marker moves.
+- **Camera grievance:** attach a photo, resolve the ticket, backdate
+  `expires_at`, run `purge_expired_media_task`, confirm the row reads
+  "1 attachment, purged <date>" with the file gone.
+- **Pickup token:** advance an order to ready, scan from the owner device,
+  confirm completion.
+- **Push:** requires `PUSH_ENABLED=true` **and a custom dev build** — Expo Go
+  dropped Android remote push in SDK 53, so this cannot be tested in Expo Go
+  at all. `expo-notifications` is imported lazily for exactly this reason.
+- **Vault:** save a receipt, enable airplane mode, confirm it still lists,
+  opens, and shares.
+
+## Gotchas found in this phase
+
+**`IntegrityError` inside an outer transaction poisons it.** The duplicate-mark
+path in `MarkAttendanceView` returned 409 by catching `IntegrityError`, but the
+serializer query in the response then failed with
+`TransactionManagementError: An error occurred in the current transaction`.
+Fixed by wrapping the insert in its own nested `transaction.atomic()`, the same
+shape `ScanView` uses in transport-service.
+
+**Test uploads were landing in the repo.** grievance-service had no
+`MEDIA_ROOT`, so `FileField` wrote `grievance-media/` into the service root and
+git picked it up. Set `MEDIA_ROOT` to `BASE_DIR/media` and ignored
+`services/*/media/`.
+
+**`expo-file-system` v57 has two APIs.** The root export is the new
+`File`/`Directory` classes; `deleteAsync` lives only at
+`expo-file-system/legacy`. The vault uses the modern `File`/`Paths` API
+(matching `useReceipt.ts`); `mediaQueue.ts` uses the legacy `deleteAsync` for
+its one delete-by-uri call.
+
+**Importing `expo-notifications` has side effects.** It runs device-token
+auto-registration at module load and warns that Expo Go cannot do remote push.
+Both the root layout and `lib/push/register.ts` import it lazily so app launch
+and the test suite stay clean.
+
+**The student tab bar is full.** Material caps a navigation bar at 5, and the
+existing layout documents that. `pass`, `attendance`, `pickup`, and `vault` are
+registered with `href: null` and reached from the home screen, like `hostel`
+and `transport` already were.
+
+## Known gaps after Phase 4
+
+Recorded honestly rather than left implied:
+
+- **Symmetric scan key.** `GET /api/v1/transport/scan-key` hands the shared
+  HS256 secret to scanner devices, so a compromised driver phone can mint
+  valid passes. That is the cost of verifying a pass at a gate with no
+  network. Mitigations in place: role-gated to driver/warden/admin, stored in
+  SecureStore, and every scan logged with its nonce so replay is detectable.
+  Moving to asymmetric signing (server holds the private key, scanners hold
+  only the public key) removes this entirely and is the right next security
+  task; it needs a key-distribution story the platform does not yet have.
+- **BLE proximity attendance.** Deferred — it needs a room beacon, since
+  faculty has no app. Geofence plus rolling code is the shipped defense.
+- **Queued attendance marks expire.** A mark queued longer than ~30 seconds
+  carries a stale code and is refused on replay. Deliberate: accepting old
+  codes would reopen exactly the proxy hole the code exists to close.
+- **Widgets require a dev build.** Not testable in Expo Go, and not shipped.
+- **Push is best-effort.** No delivery receipts beyond stale-token pruning and
+  no retry — the in-app inbox remains the source of truth. It also cannot run
+  in Expo Go at all.
+- **Nothing in this phase is device-verified.** See the list above.
+- **The faculty page's manual roll form posts to a route that does not
+  exist** (`/api/v1/attendance/records`; the real one is
+  `/api/v1/attendance/`). Predates this phase.
