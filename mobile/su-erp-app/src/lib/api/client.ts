@@ -15,6 +15,35 @@ let onAuthFailure: (() => void) | null = null;
 /** Concurrent 401s must not each fire their own refresh — they share this. */
 let inFlightRefresh: Promise<TokenPair> | null = null;
 
+/**
+ * Reachability observers, registered by the connectivity layer.
+ *
+ * Injected rather than imported: the queue already imports this module, so
+ * importing the connectivity store here would close a cycle
+ * (client -> connectivity -> queue -> client).
+ */
+let onReachable: (() => void) | null = null;
+let onUnreachable: (() => void) | null = null;
+
+export function setReachabilityHandlers(handlers: {
+  onReachable: () => void;
+  onUnreachable: () => void;
+}): void {
+  onReachable = handlers.onReachable;
+  onUnreachable = handlers.onUnreachable;
+}
+
+/**
+ * How long a request may hang before it is treated as unreachable.
+ *
+ * NetInfo reporting "online" only means the radio is up. A phone with full
+ * bars inside a hostel block can still have no route to the gateway, and
+ * without a deadline `fetch` waits on that dead socket indefinitely: the
+ * mutation never resolves, never rejects, and never reaches the offline
+ * queue, so the warden is left believing the entry was saved.
+ */
+export const REQUEST_TIMEOUT_MS = 12_000;
+
 export class ApiError extends Error {
   constructor(
     message: string,
@@ -23,6 +52,18 @@ export class ApiError extends Error {
   ) {
     super(message);
     this.name = 'ApiError';
+  }
+}
+
+/**
+ * The server could not be reached at all — no response, as opposed to a
+ * response that said no. Callers that can queue treat this exactly like being
+ * offline, because for the user it is indistinguishable.
+ */
+export class NetworkError extends Error {
+  constructor(message = 'Could not reach the server.') {
+    super(message);
+    this.name = 'NetworkError';
   }
 }
 
@@ -46,11 +87,37 @@ function requestId(): string {
   });
 }
 
+/**
+ * ``fetch`` with a deadline. An aborted or failed connection surfaces as
+ * NetworkError so it can be told apart from an HTTP error the server sent.
+ */
+async function fetchWithTimeout(url: string, init: RequestInit): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(url, { ...init, signal: controller.signal });
+    // Any response at all — even a 4xx — proves the server is reachable, which
+    // is the signal NetInfo cannot give us when the radio is up but the route
+    // is dead.
+    onReachable?.();
+    return response;
+  } catch (error) {
+    onUnreachable?.();
+    if ((error as Error)?.name === 'AbortError') {
+      throw new NetworkError('The server took too long to respond.');
+    }
+    throw new NetworkError();
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function refreshTokenPair(): Promise<TokenPair> {
   const refresh = await readRefreshToken();
   if (!refresh) throw new ApiError('No refresh token.', 401);
 
-  const response = await fetch(`${BASE_URL}/api/v1/auth/refresh`, {
+  const response = await fetchWithTimeout(`${BASE_URL}/api/v1/auth/refresh`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-Request-Id': requestId() },
     body: JSON.stringify({ refresh }),
@@ -99,7 +166,7 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
     if (accessToken) headers.Authorization = `Bearer ${accessToken}`;
     if (idempotencyKey) headers['Idempotency-Key'] = idempotencyKey;
 
-    return fetch(`${BASE_URL}${path}`, { ...init, headers });
+    return fetchWithTimeout(`${BASE_URL}${path}`, { ...init, headers });
   };
 
   let response = await send();

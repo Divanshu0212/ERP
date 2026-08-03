@@ -2,11 +2,19 @@ import { useConnectivity } from '../../net/connectivity';
 import { endTrip, sendBreadcrumbs, startTrip } from '../driver';
 import { OfflineError } from '../finance';
 
-jest.mock('../client', () => ({ request: jest.fn() }));
+jest.mock('../client', () => {
+  class NetworkError extends Error {
+    constructor(message = 'Could not reach the server.') {
+      super(message);
+      this.name = 'NetworkError';
+    }
+  }
+  return { request: jest.fn(), NetworkError };
+});
 jest.mock('../../offline/queue', () => ({ enqueue: jest.fn(async () => ({ id: 'q1' })) }));
 jest.mock('@react-native-community/netinfo', () => ({ addEventListener: jest.fn(() => () => {}) }));
 
-const { request } = jest.requireMock('../client');
+const { request, NetworkError } = jest.requireMock('../client');
 const { enqueue } = jest.requireMock('../../offline/queue');
 
 const POINT = { lat: '12.97', lng: '77.59', recorded_at: '2026-08-04T08:01:00Z' };
@@ -63,4 +71,17 @@ test('sendBreadcrumbs queues the batch through a tunnel', async () => {
     points: [POINT],
   });
   expect(request).not.toHaveBeenCalled();
+});
+
+// Regression: found on-device. A bus keeps its bars in a dead zone, so the
+// online path was taken and the whole batch was lost — a hole in the trail
+// that no later batch can fill.
+test('sendBreadcrumbs queues when the radio is up but the server is unreachable', async () => {
+  request.mockRejectedValue(new NetworkError());
+
+  await sendBreadcrumbs('trip-1', [POINT]);
+
+  expect(enqueue).toHaveBeenCalledWith('/api/v1/transport/trips/trip-1/breadcrumbs', 'POST', {
+    points: [POINT],
+  });
 });

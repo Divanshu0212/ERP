@@ -2,7 +2,7 @@ import type { Decimal, MenuItem, Order, OrderStatus, Paginated } from '@api-type
 
 import { useConnectivity } from '../net/connectivity';
 import { enqueue } from '../offline/queue';
-import { request } from './client';
+import { NetworkError, request } from './client';
 import type { Queued } from './warden';
 
 /**
@@ -38,7 +38,17 @@ export async function advanceOrder(id: string, status: OrderStatus): Promise<Ord
     return { queued: true };
   }
 
-  return request<Order>(path, { method: 'PATCH', body: JSON.stringify({ status }) });
+  try {
+    return await request<Order>(path, { method: 'PATCH', body: JSON.stringify({ status }) });
+  } catch (error) {
+    // A basement kitchen keeps its bars and loses its route. Queue rather than
+    // drop the advance; the server's transition guard still has the last word.
+    if (error instanceof NetworkError) {
+      await enqueue(path, 'PATCH', { status });
+      return { queued: true };
+    }
+    throw error;
+  }
 }
 
 export function setItemAvailability(id: string, available: boolean): Promise<MenuItem> {

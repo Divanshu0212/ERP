@@ -1,11 +1,19 @@
 import { useConnectivity } from '../../net/connectivity';
 import { NEXT_STATUS, advanceOrder, setItemAvailability } from '../owner';
 
-jest.mock('../client', () => ({ request: jest.fn() }));
+jest.mock('../client', () => {
+  class NetworkError extends Error {
+    constructor(message = 'Could not reach the server.') {
+      super(message);
+      this.name = 'NetworkError';
+    }
+  }
+  return { request: jest.fn(), NetworkError };
+});
 jest.mock('../../offline/queue', () => ({ enqueue: jest.fn(async () => ({ id: 'q1' })) }));
 jest.mock('@react-native-community/netinfo', () => ({ addEventListener: jest.fn(() => () => {}) }));
 
-const { request } = jest.requireMock('../client');
+const { request, NetworkError } = jest.requireMock('../client');
 const { enqueue } = jest.requireMock('../../offline/queue');
 
 beforeEach(() => {
@@ -49,4 +57,15 @@ test('setItemAvailability patches the menu item', async () => {
 
   const body = JSON.parse(request.mock.calls[0][1].body);
   expect(body).toEqual({ available: false });
+});
+
+// Regression: found on-device. A basement kitchen keeps its bars and loses its
+// route, so the advance took the online path and was silently dropped.
+test('advanceOrder queues when the radio is up but the server is unreachable', async () => {
+  request.mockRejectedValue(new NetworkError());
+
+  const result = await advanceOrder('o1', 'ready');
+
+  expect(enqueue).toHaveBeenCalledWith('/api/v1/orders/o1/status/', 'PATCH', { status: 'ready' });
+  expect(result).toEqual({ queued: true });
 });

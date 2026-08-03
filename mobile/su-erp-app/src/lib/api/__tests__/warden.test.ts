@@ -7,12 +7,21 @@ import {
   setTicketStatus,
 } from '../warden';
 
-jest.mock('../client', () => ({ request: jest.fn() }));
+jest.mock('../client', () => {
+  class NetworkError extends Error {
+    constructor(message = 'Could not reach the server.') {
+      super(message);
+      this.name = 'NetworkError';
+    }
+  }
+  return { request: jest.fn(), NetworkError };
+});
 jest.mock('../../offline/queue', () => ({ enqueue: jest.fn(async () => ({ id: 'q1' })) }));
 jest.mock('@react-native-community/netinfo', () => ({ addEventListener: jest.fn(() => () => {}) }));
 
-const { request } = jest.requireMock('../client');
+const { request, NetworkError } = jest.requireMock('../client');
 const { enqueue } = jest.requireMock('../../offline/queue');
+const { ApiError } = jest.requireActual('../client');
 
 beforeEach(() => {
   request.mockReset();
@@ -90,4 +99,49 @@ test('setTicketStatus queues when offline', async () => {
     status: 'resolved',
   });
   expect(result).toEqual({ queued: true });
+});
+
+// Regression: found on-device. NetInfo says "online" whenever the radio is up,
+// so a phone with full bars but no route to the gateway took the online path,
+// hung, and lost the entry entirely.
+test('logVisitor queues when the radio is up but the server is unreachable', async () => {
+  request.mockRejectedValue(new NetworkError());
+
+  const result = await logVisitor({ visitor_name: 'Asha', visiting_user_code: 'STU-001' });
+
+  expect(enqueue).toHaveBeenCalledWith(
+    '/api/v1/hostel/visitors',
+    'POST',
+    expect.objectContaining({ visitor_name: 'Asha' }),
+  );
+  expect(result).toEqual({ queued: true });
+});
+
+test('checkoutVisitor queues when the server is unreachable', async () => {
+  request.mockRejectedValue(new NetworkError());
+
+  const result = await checkoutVisitor('v1');
+
+  expect(enqueue).toHaveBeenCalledWith('/api/v1/hostel/visitors/v1/checkout', 'POST', {});
+  expect(result).toEqual({ queued: true });
+});
+
+test('setTicketStatus queues when the server is unreachable', async () => {
+  request.mockRejectedValue(new NetworkError());
+
+  const result = await setTicketStatus('t1', 'resolved');
+
+  expect(enqueue).toHaveBeenCalledWith('/api/v1/grievance/t1/status', 'PATCH', {
+    status: 'resolved',
+  });
+  expect(result).toEqual({ queued: true });
+});
+
+// The server answering "no" is not the same as the server being unreachable —
+// a rejected request must not be replayed.
+test('an HTTP error is not queued', async () => {
+  request.mockRejectedValue(new ApiError('Illegal transition.', 400));
+
+  await expect(setTicketStatus('t1', 'resolved')).rejects.toThrow('Illegal transition.');
+  expect(enqueue).not.toHaveBeenCalled();
 });

@@ -2,7 +2,7 @@ import type { Booking, BreadcrumbPoint, BusSchedule, Paginated, Trip } from '@ap
 
 import { useConnectivity } from '../net/connectivity';
 import { enqueue } from '../offline/queue';
-import { request } from './client';
+import { NetworkError, request } from './client';
 import { OfflineError } from './finance';
 
 function offline(): boolean {
@@ -42,7 +42,17 @@ export async function sendBreadcrumbs(tripId: string, points: BreadcrumbPoint[])
     return;
   }
 
-  await request<void>(path, { method: 'POST', body: JSON.stringify({ points }) });
+  try {
+    await request<void>(path, { method: 'POST', body: JSON.stringify({ points }) });
+  } catch (error) {
+    // A bus in a dead zone still shows "online" on the radio. Losing the batch
+    // here would punch a hole in the trail that no later batch can fill.
+    if (error instanceof NetworkError) {
+      await enqueue(path, 'POST', { points });
+      return;
+    }
+    throw error;
+  }
 }
 
 export function fetchManifest(scheduleId: string): Promise<Paginated<Booking>> {
