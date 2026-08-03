@@ -18,6 +18,15 @@ const CATEGORIES: { value: string; label: string }[] = [
   { value: 'harassment', label: 'Harassment' },
 ];
 
+/**
+ * Categories are free-form at the DB level, so a ticket can carry a value with
+ * no chip. Falling back to capitalize() alone would render "it" as "It".
+ */
+function categoryLabel(value: string): string {
+  const known = CATEGORIES.find((c) => c.value === value);
+  return known ? known.label : value.charAt(0).toUpperCase() + value.slice(1);
+}
+
 const STATUS_COPY: Record<Ticket['status'], string> = {
   open: 'Open',
   escalated: 'Escalated',
@@ -156,7 +165,9 @@ export default function GrievanceScreen() {
         renderItem={({ item }) => (
           <Card className="mx-4 mb-3 gap-1">
             <View className="flex-row items-center justify-between">
-              <Text className="text-body font-semibold capitalize text-ink">{item.category}</Text>
+              <Text className="text-body font-semibold text-ink">
+                {categoryLabel(item.category)}
+              </Text>
               <Text className={`text-detail ${STATUS_STYLE[item.status]}`}>
                 {STATUS_COPY[item.status]}
               </Text>
