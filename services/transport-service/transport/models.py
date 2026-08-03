@@ -112,6 +112,34 @@ class Pass(TenantModel):
         return f"Pass {self.id} (active={self.active})"
 
 
+class ScanLog(TenantModel):
+    """One gate scan of a QR pass.
+
+    ``nonce`` is unique, which is the entire replay defense: every minted QR
+    carries a fresh nonce, so a screenshot presented a second time collides
+    here and is refused. Rejected scans are recorded too — a burst of them is
+    exactly the signal that someone is passing a screenshot around.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    pass_id = models.UUIDField()
+    student_user_code = models.CharField(max_length=30)
+    scanned_by = models.CharField(max_length=30)
+    nonce = models.CharField(max_length=64, unique=True)
+    accepted = models.BooleanField()
+    reason = models.CharField(max_length=255, blank=True, default="")
+    scanned_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["pass_id", "scanned_at"], name="scanlog_pass_time"),
+        ]
+
+    def __str__(self):
+        state = "ok" if self.accepted else "refused"
+        return f"{self.student_user_code} @ {self.scanned_at} ({state})"
+
+
 class Trip(TenantModel):
     """One driver's active run of a schedule.
 

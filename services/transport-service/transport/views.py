@@ -16,6 +16,9 @@ On a successful booking the cached seat count for the schedule is invalidated
 No event is published — a booking is terminal for now.
 """
 
+import uuid
+
+from django.conf import settings
 from django.core.cache import cache
 from django.db import IntegrityError, transaction
 from django.shortcuts import get_object_or_404
@@ -26,9 +29,11 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.views import APIView
 from suerp_common.envelope import fail, ok
 from suerp_common.permissions import role_required
+from suerp_common.signed_token import SignedTokenError
 from suerp_common.tenancy import get_current_tenant
 
-from .models import Booking, Breadcrumb, BusSchedule, Route, Trip
+from . import pass_tokens
+from .models import Booking, Breadcrumb, BusSchedule, Pass, Route, ScanLog, Trip
 from .serializers import (
     BookingRequestSerializer,
     BookingSerializer,
@@ -315,3 +320,89 @@ class LivePositionView(APIView):
         if position is None:
             return fail("No bus is currently running on this route.", status=404)
         return ok(position)
+
+
+class MyPassQrView(APIView):
+    """GET /api/v1/transport/passes/mine/qr — a fresh 30-second pass token.
+
+    The app re-requests this every 30 seconds while the QR is on screen, so
+    a screenshot dies before it is useful.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        bus_pass = Pass.objects.filter(student_user_code=request.user.id, active=True).first()
+        if bus_pass is None:
+            return fail("You have no active bus pass.", status=404)
+
+        token = pass_tokens.mint(get_current_tenant(), bus_pass.id, request.user.id)
+        return ok({"token": token, "expires_in": pass_tokens.PASS_TTL_SECONDS})
+
+
+class ScanKeyView(APIView):
+    """GET /api/v1/transport/scan-key — verification material for scanners.
+
+    Cached in the scanner's SecureStore at login so a gate scan needs no
+    network. See the security note in the Phase 4 plan: this hands a
+    symmetric key to scanner devices, and moving to an asymmetric scheme is
+    the intended end state.
+    """
+
+    permission_classes = [role_required("driver", "warden", "admin")]
+
+    def get(self, request):
+        return ok({"algorithm": "HS256", "key": settings.JWT_SIGNING_KEY})
+
+
+class ScanView(APIView):
+    """POST /api/v1/transport/scans — record a gate scan."""
+
+    permission_classes = [role_required("driver", "warden", "admin")]
+
+    def post(self, request):
+        token = request.data.get("token", "")
+        if not token:
+            return fail("A token is required.", status=400)
+
+        try:
+            claims = pass_tokens.read(token)
+        except SignedTokenError as exc:
+            return fail(f"Invalid pass: {exc}", status=400)
+
+        tenant_id = get_current_tenant()
+        if claims["tenant_id"] != str(tenant_id):
+            return fail("Invalid pass: wrong institution.", status=400)
+
+        try:
+            with transaction.atomic():
+                scan = ScanLog.objects.create(
+                    tenant_id=tenant_id,
+                    pass_id=claims["pass_id"],
+                    student_user_code=claims["student_user_code"],
+                    scanned_by=request.user.id,
+                    nonce=claims["nonce"],
+                    accepted=True,
+                )
+        except IntegrityError:
+            # The nonce is already spent — this QR has been scanned before.
+            ScanLog.objects.create(
+                tenant_id=tenant_id,
+                pass_id=claims["pass_id"],
+                student_user_code=claims["student_user_code"],
+                scanned_by=request.user.id,
+                nonce=f"{claims['nonce']}:dup:{uuid.uuid4()}",
+                accepted=False,
+                reason="Pass already scanned.",
+            )
+            return fail("This pass has already been scanned.", status=409)
+
+        return ok(
+            {
+                "accepted": scan.accepted,
+                "student_user_code": scan.student_user_code,
+                "scanned_at": scan.scanned_at,
+            },
+            message="Pass accepted.",
+            status=201,
+        )
