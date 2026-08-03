@@ -12,11 +12,12 @@ Included under /api/v1/notify/ from config.urls.
 """
 
 from django.shortcuts import get_object_or_404
-from notify.models import Notification
+from notify.models import Notification, PushDevice
 from notify.serializers import NotificationSerializer
 from rest_framework.generics import ListAPIView
 from rest_framework.views import APIView
-from suerp_common.envelope import ok
+from suerp_common.envelope import fail, ok
+from suerp_common.tenancy import get_current_tenant
 
 
 class InboxListView(ListAPIView):
@@ -47,3 +48,28 @@ class MarkReadView(APIView):
             notification.read = True
             notification.save(update_fields=["read"])
         return ok(NotificationSerializer(notification).data, message="Notification marked read.")
+
+
+class PushDeviceView(APIView):
+    """POST /api/v1/notify/devices — register this device for push.
+
+    Upsert on the token rather than create: the app re-registers on every
+    sign-in, and a device handed to a new user must follow the new owner
+    rather than keep pushing this tenant's notifications to them.
+    """
+
+    def post(self, request):
+        push_token = (request.data.get("push_token") or "").strip()
+        if not push_token:
+            return fail("A push token is required.", status=400)
+
+        device, _ = PushDevice.all_objects.update_or_create(
+            push_token=push_token,
+            defaults={
+                "tenant_id": get_current_tenant(),
+                "user_code": request.user.id,
+                # A token that re-registers is demonstrably alive again.
+                "is_stale": False,
+            },
+        )
+        return ok({"id": str(device.id)}, message="Device registered.")

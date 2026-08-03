@@ -21,6 +21,7 @@ rooms, pay fees, raise grievances, and track their records — all through one w
 - [Demo 1 — the hostel saga](#demo-1--the-hostel-saga-hostel--finance--notification)
 - [Demo 2 — the ML grievance escalation](#demo-2--the-ml-grievance-escalation-grievance--ai--notification)
 - [Screenshots](#screenshots)
+- [Mobile app](#mobile-app)
 - [Correctness under adversarial conditions](#correctness-under-adversarial-conditions)
 - [Multi-tenancy](#multi-tenancy)
 - [Zero-trust identity](#zero-trust-identity)
@@ -113,14 +114,14 @@ reached through the gateway on `:8080` at `/api/v1/...`.
 | ai-service           | Sentiment/urgency scoring, chatbot intent       | `/api/v1/ai/`            | FastAPI | full   |
 | canteen-service      | Menu, orders & Razorpay checkout                | `/api/v1/menu-items/`, `/api/v1/orders/` | Django | full |
 | student-service      | Student master records                          | `/api/v1/students/`      | Django  | stub   |
-| attendance-service   | Attendance tracking                             | `/api/v1/attendance/`    | Django  | stub   |
+| attendance-service   | Geofenced sessions, rolling codes, marks        | `/api/v1/attendance/`    | Django  | full   |
 | exam-service         | Exams & results                                 | `/api/v1/exams/`         | Django  | stub   |
 | library-service      | Books & lending                                 | `/api/v1/books/`         | Django  | stub   |
 | placement-service    | Placement drives                                | `/api/v1/placements/`    | Django  | stub   |
 | analytics-service    | Cross-service metrics                           | `/api/v1/metrics/`       | Django  | stub   |
 
 "stub" services expose working CRUD prototypes on the tenant/JWT/event foundation;
-the eight "full" services carry the complete business logic and the two demo flows.
+the nine "full" services carry the complete business logic and the two demo flows.
 
 ---
 
@@ -400,8 +401,199 @@ pay through the same Razorpay checkout as fees.
 | --- | --- |
 | ![Faculty](docs/screenshots/faculty-dashboard.png) | ![Driver](docs/screenshots/driver-dashboard.png) |
 
-Faculty/exam and attendance endpoints 404 here — those are prototype/stub services (see
+Exam endpoints 404 here — that is still a prototype/stub service (see
 [`docs/REMAINING_MODULES.md`](docs/REMAINING_MODULES.md) for what's fully built vs. stubbed).
+Attendance is no longer a stub: the faculty page now carries a live geofenced
+session console (open a session, project the rotating code, watch the roster
+fill, close it) backed by `attendance-service`. Students mark from the mobile
+app — see [Mobile app](#mobile-app). The manual roll form above it still calls a
+route that does not exist, and is a known gap.
+
+### Monitoring under load
+
+![Grafana — SU-ERP Services Overview](docs/screenshots/grafana-dashboard.png)
+
+The Grafana dashboard (`infra/grafana/dashboards/suerp-services.json`) during a real
+multi-tenant load run: **2,889 requests at ~9.8 req/s** driven from a client against the
+gateway across two tenants (NITJ + a freshly provisioned **IIT Ropar**), with
+**p50 10 ms / p95 34 ms** and **zero 5xx**. The dip in the middle is the services being
+rebuilt and restarted mid-run; traffic resumes cleanly after.
+
+The 4xx line is real signal, not noise: the load driver deliberately requests a
+non-existent allocation UUID on a fixed cadence so the error-rate panel has something to
+track.
+
+Two things the run surfaced, both the system behaving correctly:
+
+- **The gateway rate limiter works.** A first, unpaced attempt at ~500 req/s from one IP
+  was almost entirely rejected with `429` — nginx enforces 10 r/s per client IP
+  (burst 20), and 3 r/s on `/auth/login`. The load driver above is paced under that
+  ceiling, which is why its 429 count is zero.
+- **The auth lockout works.** A deliberate wrong-password worker tripped
+  auth-service's 5-failures-in-15-minutes account lockout, which is exactly its job.
+
+Start the monitoring stack alongside the app (it is behind its own compose profile, so it
+stays off by default):
+
+```sh
+docker compose -f infra/docker-compose.yml --profile observability up -d prometheus grafana
+```
+
+Prometheus at `http://localhost:9090` (all 14 targets healthy), Grafana at
+`http://localhost:3000` (admin/admin). Note that Grafana publishes `3000`, the same port
+as the Next.js dev server — run one at a time locally, or remap one of them.
+
+---
+
+## Mobile app
+
+An Expo / React Native app in [`mobile/su-erp-app`](mobile/su-erp-app), sharing
+the gateway, the JWT scheme, and the `shared/api-types` contracts with the web
+dashboard. It is not a wrapper around the web app: it exists for the eight
+things a browser on a campus cannot do.
+
+**Design target:** mid-range Android phones, one-handed, outdoors in daylight,
+on a network that drops. Tokens in `tailwind.config.js` are chosen for that
+scene rather than for a mockup.
+
+### Four roles
+
+| Role | What the app is for |
+| --- | --- |
+| **Student** | fees, hostel, canteen, bus, grievances, attendance, passes, documents |
+| **Warden** | hostel approvals and visitor logging at the door |
+| **Driver** | run a trip, broadcast position, scan passes at the door |
+| **Canteen owner** | the live order board, menu availability, scan pickups |
+
+Faculty, admin, and superadmin stay on the web dashboard — including the
+geofenced attendance console faculty use to open a session.
+
+### The eight hardware-only features
+
+1. **QR bus pass** — a capability token that re-mints every 30 seconds, so a
+   screenshot is stale before it can be forwarded. The driver's scanner
+   verifies it against a cached key with **no network at all**, and every
+   nonce is spent exactly once, so a replayed code is refused at the door.
+2. **Geofenced attendance** — a student is marked present only from inside the
+   room's circle, with the 15-second rotating code on the faculty's screen,
+   once. Mocked locations are refused *and recorded*.
+3. **Live bus map** — the student watches the bus move; the driver's phone is
+   the GPS source, batching breadcrumbs through tunnels.
+4. **Camera-first grievances** — photograph the broken fan. The blob is deleted
+   7 days after the ticket resolves; the metadata (`sha256`, `captured_at`,
+   `purged_at`) is kept forever, so the log still reads "1 attachment, purged
+   on the 9th".
+5. **Canteen pickup tokens** — the counter scans the student's code to complete
+   an order, so "collected" means a real handoff rather than a stray tap.
+6. **Push notifications** — behind a swappable channel interface; the in-app
+   inbox stays the source of truth and a push outage never fails a consumer.
+7. **Offline document vault** — receipts saved to the device's document
+   directory. The list reads the folder, not the API, so it works in airplane
+   mode. That is the whole feature.
+8. **Home-screen widgets** — **not shipped.** They need native targets and a
+   custom dev build; this project runs on Expo Go.
+
+### Offline model
+
+Field roles work where signal dies, so mutations that genuinely happen in dead
+zones are queued in SQLite and replayed on reconnect, carrying their id as an
+`Idempotency-Key`. Photos queue separately and the local file is deleted only
+after the server confirms receipt.
+
+Two things deliberately **never** queue: **payments**, because a fee payment
+that silently fires an hour later is worse than one that fails now; and
+**pickup scans**, because a scan replayed later would assert a handoff nobody
+witnessed.
+
+Reachability is not the same as connectivity — a phone with full bars inside a
+hostel block can still have no route to the gateway. The client applies a 12s
+deadline and treats "unreachable" exactly like offline.
+
+### Constraints worth knowing
+
+**`react-native-reanimated` and `react-native-worklets` are blocked** at the
+Metro resolver. Expo Go ships its own prebuilt `libworklets.so`, and importing
+reanimated initialises that native runtime against a mismatched JS side,
+segfaulting on launch. Motion uses RN core `Animated` with
+`useNativeDriver: true`. Removing the block needs a custom dev build.
+
+**Push cannot be tested in Expo Go** — SDK 53 removed Android remote push from
+it. `expo-notifications` is imported lazily so this never affects app launch.
+
+### Docs
+
+- Spec: [`docs/superpowers/specs/2026-08-02-mobile-app-design.md`](docs/superpowers/specs/2026-08-02-mobile-app-design.md)
+- Runbook, gotchas, and what is *not* yet device-verified: [`docs/RUNBOOK-mobile.md`](docs/RUNBOOK-mobile.md)
+- Phase plans: [`docs/superpowers/plans/`](docs/superpowers/plans/) — foundation,
+  student flows, field roles, and hardware features
+
+---
+
+## Correctness under adversarial conditions
+
+Throughput on a laptop proves little. What this system is actually built to survive is
+concurrency, redelivery, and infrastructure failure — so those are what it's tested for.
+Each claim below maps to something runnable, not a diagram.
+
+### Race safety — 50 threads, one seat
+
+```sh
+make test-concurrency
+```
+
+`hostel/tests/test_concurrency.py` runs real OS threads against **real PostgreSQL** (not
+the SQLite fallback, where `select_for_update()` is a no-op and a green test would prove
+nothing — it skips instead of passing vacuously) using `TransactionTestCase`, so every
+thread gets its own committed connection:
+
+| Scenario | Guarantee |
+| --- | --- |
+| 50 students race for the **last** seat | exactly **1** wins, 49 clean `RoomFullError`s, room lands at `2/2` |
+| 30 students, 3 free seats | exactly **3** win — never over-allocated |
+| 1 student fires 20 concurrent requests | exactly **1** allocation, capacity consumed once |
+| Two tenants allocate concurrently | 1 winner each, zero cross-tenant leakage |
+
+The test is load-bearing, not decorative: with `select_for_update()` neutered in-memory,
+the last-seat race reproduces the bug — **3 students win the same seat and the room
+over-allocates**. That failure is what the lock in `hostel/services.py` prevents.
+
+### Broker outage mid-saga — the outbox earns its keep
+
+```sh
+make chaos          # ./scripts/chaos_broker_outage.sh
+```
+
+Kills RabbitMQ in the middle of a live allocation saga and asserts recovery:
+
+```
+[1] killing RabbitMQ mid-flight
+  ✓ RabbitMQ is DOWN
+[2] allocating a seat with NO broker (the write must still succeed)
+  ✓ HTTP 201 — allocation created with the broker DOWN
+  ✓ event is SAFE in the outbox, unpublished: backlog 0 -> 1
+[3] bringing RabbitMQ back
+  ✓ RabbitMQ is UP and healthy
+[4] waiting for the outbox to drain by itself (beat runs every 5s)
+  ✓ backlog drained back to 0 — no manual replay, no lost events
+[5] confirming the downstream saga step ran
+  ✓ finance consumed the recovered event and raised an invoice for 11000.00
+```
+
+This is the **dual-write problem**, demonstrated rather than asserted. Publishing inside
+the request handler would have dropped that event the moment the broker died, wedging the
+saga with a seat reserved and no invoice. Because `publish_event()` only inserts an outbox
+row inside `transaction.atomic()`, the state change and the event commit together — a dead
+broker can't fail the user's request or lose the event.
+
+### Already covered by the unit suite
+
+The hard distributed-systems cases are tested in `hostel/tests/test_saga.py`:
+
+- **Out-of-order correlation** — `payment.success` arriving *before* `invoice.created`
+  still confirms the seat (and the same for the failure/release path).
+- **Idempotency** — the same `event_id` redelivered confirms once and emits one event.
+- **Timeout compensation never releases a paid seat** — including the paid-but-uncorrelated
+  case, which is the subtle one.
 
 ### Monitoring under load
 

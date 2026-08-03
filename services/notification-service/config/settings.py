@@ -35,6 +35,12 @@ ALLOWED_HOSTS = env.list("ALLOWED_HOSTS", default=["*"])
 # key. See suerp_common.auth.JWTAuthentication.
 JWT_SIGNING_KEY = env("JWT_SIGNING_KEY", default="dev-insecure-change-me")
 
+# --- Push notifications -------------------------------------------------------
+# Off by default so a local run cannot fire real pushes at students' phones;
+# see notify/push.py. Enable in deployed environments only.
+
+PUSH_ENABLED = env.bool("PUSH_ENABLED", default=False)
+
 # --- Applications -------------------------------------------------------------
 
 INSTALLED_APPS = [

@@ -24,20 +24,20 @@ against what the codebase actually implements as of branch `phase-1-foundation`.
 | 6.1 | auth | ✅ Built | register, login, refresh, me; tenant-scoped JWT; role claim; login lockout (5×); `user.registered` outbox | logout, refresh-token blacklist, `Role`/`Permission` tables (RBAC is role-claim only), password reset, MFA/TOTP, `user.login_failed_x5` event |
 | 6.2 | student | 🟡 Stub | tenant-isolated CRUD model + list/create | academic history, enrollment, document vault, `student.enrolled` event, consume `user.registered` |
 | 6.3 | hostel | ✅ Built | Block/Room/Allocation/LeaveRequest/Complaint; `allocate` (saga start); saga close (confirm/release on finance events); timeout compensation that never releases a paid seat | VisitorLog, MessMenu + mess endpoints, allocation **optimizer** (current allocate is a naive first-available reserve), consume `student.enrolled` |
-| 6.4 | transport | ✅ Built | routes/stops/schedules/bookings/Pass; race-safe seat booking (partial-unique + lock); tenant-namespaced Redis seat cache; pass activation on `finance.payment.success` | driver live-trip dashboard, QR e-pass generation, `transport.booked`/`pass.issued` events, demand forecasting |
+| 6.4 | transport | ✅ Built | routes/stops/schedules/bookings/Pass; race-safe seat booking (partial-unique + lock); tenant-namespaced Redis seat cache; pass activation on `finance.payment.success`; driver live-trip dashboard (Trip/Breadcrumb + Redis live position); QR e-passes (30s rolling capability tokens, offline-verifiable, nonce-per-scan replay defense via `ScanLog`) | `transport.booked`/`pass.issued` events, demand forecasting, asymmetric scan key (see below) |
 | 6.5 | finance | ✅ Built | FeeStructure/Invoice/Payment/Receipt; `pay` (idempotent, `select_for_update`); **simulated** swappable gateway; `payment.success`/`failed` outbox; consumes `hostel.allocation.requested`→invoice | real Razorpay/Stripe test integration, defaulter tracking + `defaulter.flagged`, consume `student.enrolled` for first invoice, anomaly detection |
-| 6.6 | attendance | 🟡 Stub | tenant-isolated CRUD model | mark/summary/report endpoints, defaulter compute, `attendance.low_flagged`, dropout-risk ML |
+| 6.6 | attendance | ✅ Built | Session/AttendanceMark + the original day roll; geofenced marking (haversine circle, no PostGIS), 15s HMAC rolling codes with one-bucket grace, one-mark-per-student constraint, mock-location refused *and* recorded; faculty session list + live roster; per-course summary | defaulter compute, `attendance.low_flagged`, dropout-risk ML, BLE proximity (needs a room beacon) |
 | 6.7 | exam | 🟡 Stub | tenant-isolated CRUD model | schedule/hall-ticket/marks/results, CGPA compute, `exam.result.published`, timetable CSP |
 | 6.8 | library | 🟡 Stub | tenant-isolated CRUD model | search/issue/return/reserve, fine calc, `overdue.flagged`, recommendation engine |
 | 6.9 | canteen | ✅ Built | MenuItem/Order/OrderItem; menu CRUD (price edit, availability toggle); cart pricing with snapshot `unit_price`; order status machine (placed→preparing→ready→completed / cancelled) with legal-transition guards; **simulated** swappable Razorpay checkout | campus-wallet debit, token-queue display, `order.placed`/`order.ready` events |
 | 6.10 | grievance | ✅ Built | Ticket/TicketComment; `create`→`grievance.created` (payload carries `raised_by`); `grievance.scored` consumer auto-escalates high/critical to warden | `EscalationLog` model (escalation is a status flip), `PATCH /status` endpoint |
-| 6.11 | notification | ✅ Built | per-user in-app inbox (JWT-`sub` scoped); mark-read; terminal fan-out consumer for `payment.success`/`allocation.confirmed`/`grievance.scored` | broadcast endpoint, templates, real email/SMS/push channels (in-app only) |
+| 6.11 | notification | ✅ Built | per-user in-app inbox (JWT-`sub` scoped); mark-read; terminal fan-out consumer for `payment.success`/`allocation.confirmed`/`grievance.scored`; Expo push behind a swappable `PushChannel` (best-effort, stale-token pruning, `PushDevice` registration) | broadcast endpoint, templates, email/SMS channels, push delivery receipts and retry |
 | 6.12 | placement | 🟡 Stub | tenant-isolated CRUD model | drives/apply/matches, resume upload, shortlisting, resume–JD ML |
 | 6.13 | ai | ✅ Built (partial) | FastAPI; `/ai/sentiment` (VADER + keyword urgency); `/ai/chatbot/query` (TF-IDF intent routing); `grievance.created`→`grievance.scored` producer (wire-format verified) | `/ai/resume-match`, `/ai/attendance-risk`, `/ai/plagiarism-check` endpoints |
 | 6.14 | analytics | 🟡 Stub | tenant-isolated CRUD model | CQRS-lite event-consuming aggregate tables (attendance %, revenue, occupancy, bus utilization) |
 
-**Score:** 8 services fully built (auth, hostel, transport, finance, grievance, notification, ai, canteen),
-6 stubbed (student, attendance, exam, library, placement, analytics).
+**Score:** 9 services fully built (auth, hostel, transport, finance, grievance, notification, ai, canteen,
+attendance), 5 stubbed (student, exam, library, placement, analytics).
 
 ---
 
@@ -48,7 +48,7 @@ against what the codebase actually implements as of branch `phase-1-foundation`.
 | 12.2 | Complaint sentiment & urgency | grievance ↔ ai | ✅ Built | VADER compound polarity + keyword urgency table (ragging/harassment→critical). Drives the auto-escalation demo end-to-end. |
 | 12.3 | Resume–JD matching | placement ↔ ai | ⬜ Not built | No `/ai/resume-match`; placement is a stub. Designed as sentence-embedding similarity. |
 | 12.4 | Campus chatbot | ai (gateway) | ✅ Built (simpler) | Implemented as TF-IDF + intent routing over a seed set, not the doc's broader assistant; returns templated answers, mocks downstream calls in tests. |
-| 12.5 | Attendance dropout/at-risk | attendance ↔ ai | ⬜ Not built | No `/ai/attendance-risk`; attendance is a stub. |
+| 12.5 | Attendance dropout/at-risk | attendance ↔ ai | ⬜ Not built | No `/ai/attendance-risk`. Attendance itself is now built, so the marks this would learn from exist. |
 | 12.6 | Hostel allocation optimizer | hostel | ⬜ Not built | `allocate` reserves the first available bed; no constraint-based grouping by course/preference. |
 | 12.7 | Bus demand forecasting | transport | ⬜ Not built | No time-series/forecast; bookings are recorded but not modeled. |
 | 12.8 | Payment anomaly detection | finance | ⬜ Not built | No anomaly scoring on amount/time patterns. |

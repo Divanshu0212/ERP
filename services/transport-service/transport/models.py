@@ -110,3 +110,85 @@ class Pass(TenantModel):
 
     def __str__(self):
         return f"Pass {self.id} (active={self.active})"
+
+
+class ScanLog(TenantModel):
+    """One gate scan of a QR pass.
+
+    ``nonce`` is unique, which is the entire replay defense: every minted QR
+    carries a fresh nonce, so a screenshot presented a second time collides
+    here and is refused. Rejected scans are recorded too — a burst of them is
+    exactly the signal that someone is passing a screenshot around.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    pass_id = models.UUIDField()
+    student_user_code = models.CharField(max_length=30)
+    scanned_by = models.CharField(max_length=30)
+    nonce = models.CharField(max_length=64, unique=True)
+    accepted = models.BooleanField()
+    reason = models.CharField(max_length=255, blank=True, default="")
+    scanned_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["pass_id", "scanned_at"], name="scanlog_pass_time"),
+        ]
+
+    def __str__(self):
+        state = "ok" if self.accepted else "refused"
+        return f"{self.student_user_code} @ {self.scanned_at} ({state})"
+
+
+class Trip(TenantModel):
+    """One driver's active run of a schedule.
+
+    A schedule is the timetable entry; a Trip is today's actual execution of
+    it. Separating them means the live position and breadcrumb trail belong
+    to a specific run and disappear cleanly when it ends.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    schedule = models.ForeignKey(BusSchedule, on_delete=models.CASCADE, related_name="trips")
+    # Reference to auth-service's User table (the driver), by user_code.
+    driver_id = models.CharField(max_length=30)
+    started_at = models.DateTimeField(auto_now_add=True)
+    ended_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["schedule", "ended_at"], name="trip_schedule_active"),
+        ]
+
+    def __str__(self):
+        return f"Trip {self.id} ({'active' if self.ended_at is None else 'ended'})"
+
+
+class Breadcrumb(TenantModel):
+    """One GPS sample from a running trip.
+
+    ``recorded_at`` is stamped on the device, not the server, because these
+    arrive in batches after a signal gap — the server's clock would collapse
+    a five-minute tunnel into one instant. The uniqueness constraint makes a
+    replayed batch (the offline queue retrying) a no-op rather than a
+    duplicated trail.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    trip = models.ForeignKey(Trip, on_delete=models.CASCADE, related_name="breadcrumbs")
+    lat = models.DecimalField(max_digits=9, decimal_places=6)
+    lng = models.DecimalField(max_digits=9, decimal_places=6)
+    recorded_at = models.DateTimeField()
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["trip", "recorded_at"], name="unique_breadcrumb_per_instant"
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["trip", "recorded_at"], name="breadcrumb_trip_time"),
+        ]
+
+    def __str__(self):
+        return f"{self.lat},{self.lng} @ {self.recorded_at}"

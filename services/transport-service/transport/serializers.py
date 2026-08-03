@@ -7,7 +7,7 @@ uniqueness/idempotency/atomic-commit logic lives in
 
 from rest_framework import serializers
 
-from .models import Booking, BusSchedule, Route
+from .models import Booking, BusSchedule, Route, Trip
 
 
 class RouteSerializer(serializers.ModelSerializer):
@@ -64,3 +64,25 @@ class BookingSerializer(serializers.ModelSerializer):
         model = Booking
         fields = ["id", "schedule_id", "student_user_code", "seat_no", "status", "created_at"]
         read_only_fields = fields
+
+
+class TripSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Trip
+        fields = ["id", "schedule", "driver_id", "started_at", "ended_at"]
+        read_only_fields = fields
+
+
+class BreadcrumbPointSerializer(serializers.Serializer):
+    lat = serializers.DecimalField(max_digits=9, decimal_places=6)
+    lng = serializers.DecimalField(max_digits=9, decimal_places=6)
+    recorded_at = serializers.DateTimeField()
+
+
+class BreadcrumbBatchSerializer(serializers.Serializer):
+    points = BreadcrumbPointSerializer(many=True)
+
+    def validate_points(self, value):
+        if not value:
+            raise serializers.ValidationError("A batch must contain at least one point.")
+        return value

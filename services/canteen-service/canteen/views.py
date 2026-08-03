@@ -19,6 +19,7 @@ and be ``available=True`` or the whole order is rejected 400.
 import uuid
 from datetime import timedelta
 
+from canteen import pickup_tokens
 from canteen.models import MenuItem, Order, OrderItem
 from canteen.serializers import (
     CheckoutSerializer,
@@ -38,6 +39,8 @@ from rest_framework.views import APIView
 from suerp_common import razorpay_gateway
 from suerp_common.envelope import fail, ok
 from suerp_common.permissions import role_required
+from suerp_common.signed_token import SignedTokenError
+from suerp_common.tenancy import get_current_tenant
 
 # Roles allowed to manage the menu and the order queue.
 _STAFF_ROLES = ("canteen_owner", "admin")
@@ -308,3 +311,66 @@ class OrderStatusUpdateView(APIView):
         order.status = new_status
         order.save(update_fields=["status", "updated_at"])
         return ok(OrderSerializer(order).data, message="Order status updated.")
+
+
+class PickupTokenView(APIView):
+    """GET /api/v1/orders/<id>/pickup-token — the QR the student shows."""
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, pk):
+        # ``objects`` is tenant-scoped, so another tenant's order is simply
+        # not found — no cross-tenant existence leak.
+        try:
+            order = Order.objects.get(pk=pk)
+        except Order.DoesNotExist:
+            return fail("Order not found.", status=404)
+
+        if str(order.student_user_code) != str(request.user.id):
+            return fail("This is not your order.", status=403)
+
+        if order.status != Order.Status.READY:
+            return fail("This order is not ready for pickup yet.", status=400)
+
+        return ok(
+            {
+                "token": pickup_tokens.mint(get_current_tenant(), order.id),
+                "expires_in": pickup_tokens.PICKUP_TTL_SECONDS,
+            }
+        )
+
+
+class PickupScanView(APIView):
+    """POST /api/v1/orders/pickup — the counter scans and completes.
+
+    Scanning is the only path from ready to completed in the app, which
+    means a completed order corresponds to a real handoff rather than a
+    stray tap on a busy screen.
+    """
+
+    permission_classes = [role_required(*_STAFF_ROLES)]
+
+    def post(self, request):
+        token = request.data.get("token", "")
+        if not token:
+            return fail("A token is required.", status=400)
+
+        try:
+            claims = pickup_tokens.read(token)
+        except SignedTokenError as exc:
+            return fail(f"Invalid pickup token: {exc}", status=400)
+
+        if claims["tenant_id"] != str(get_current_tenant()):
+            return fail("Invalid pickup token: wrong institution.", status=400)
+
+        try:
+            order = Order.objects.get(pk=claims["order_id"])
+        except Order.DoesNotExist:
+            return fail("Order not found.", status=404)
+
+        if order.status != Order.Status.READY:
+            return fail(f"Order is '{order.status}', not ready for pickup.", status=400)
+
+        order.status = Order.Status.COMPLETED
+        order.save(update_fields=["status", "updated_at"])
+        return ok(OrderSerializer(order).data, message="Order handed over.")

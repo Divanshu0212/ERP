@@ -9,10 +9,18 @@ exactly what ``suerp_common.auth.JWTAuthentication`` reads; every other
 service treats this shape as its contract with auth-service.
 """
 
-from accounts.models import Institution, LoginAudit, User, UserProfile
+from accounts.models import (
+    Device,
+    Institution,
+    LoginAudit,
+    RefreshTokenRecord,
+    User,
+    UserProfile,
+)
 from accounts.serializers import (
     AdminCreateUserSerializer,
     BulkCreateStudentRowSerializer,
+    DeviceSerializer,
     InstitutionCreateSerializer,
     InstitutionSerializer,
     LoginSerializer,
@@ -23,6 +31,14 @@ from accounts.serializers import (
     UserByCodeSerializer,
     UserListSerializer,
     UserProfileSerializer,
+)
+from accounts.token_service import (
+    TokenInvalidError,
+    TokenReuseError,
+    issue_for_device,
+    register_device,
+    revoke_device_chain,
+    rotate,
 )
 from django.conf import settings
 from django.contrib.auth import authenticate
@@ -130,7 +146,20 @@ class LoginView(APIView):
 
         LoginAudit.objects.create(tenant=institution, user=user, email=email, ip=ip, success=True)
 
-        tokens = _issue_tokens(user)
+        device_id = serializer.validated_data.get("device_id")
+        if device_id:
+            device = register_device(
+                user,
+                device_id=device_id,
+                platform=serializer.validated_data.get("platform", ""),
+                model_name=serializer.validated_data.get("model_name", ""),
+                push_token=serializer.validated_data.get("push_token", ""),
+            )
+            tokens = issue_for_device(user, device)
+        else:
+            # Web clients send no device — keep the stateless path unchanged.
+            tokens = _issue_tokens(user)
+
         return ok(tokens, message="Login successful.")
 
     @staticmethod
@@ -154,29 +183,73 @@ class RefreshView(APIView):
         if not serializer.is_valid():
             return fail("Invalid refresh request.", errors=serializer.errors, status=400)
 
+        raw = serializer.validated_data["refresh"]
+
         try:
-            refresh = RefreshToken(serializer.validated_data["refresh"])
+            refresh = RefreshToken(raw)
         except TokenError as exc:
             return fail(f"Invalid or expired refresh token: {exc}", status=401)
 
-        access = refresh.access_token
-        # RefreshToken.access_token copies claims automatically except those
-        # listed in no_copy_claims (token_type/exp/iat/jti) — sub/role/tenant
-        # ride along already, but set explicitly to guarantee the contract
-        # even if SimpleJWT's copy behavior changes upstream.
-        access["sub"] = refresh.get("sub")
-        access["role"] = refresh.get("role")
-        access["tenant"] = refresh.get("tenant")
+        # Only mobile logins produce a tracked record. An untracked token is a
+        # web client on the original stateless flow — rotate it in place.
+        if not RefreshTokenRecord.objects.filter(jti=refresh["jti"]).exists():
+            access = refresh.access_token
+            # RefreshToken.access_token copies claims automatically except those
+            # listed in no_copy_claims (token_type/exp/iat/jti) — sub/role/tenant
+            # ride along already, but set explicitly to guarantee the contract
+            # even if SimpleJWT's copy behavior changes upstream.
+            access["sub"] = refresh.get("sub")
+            access["role"] = refresh.get("role")
+            access["tenant"] = refresh.get("tenant")
 
-        data = {"access": str(access)}
+            data = {"access": str(access)}
 
-        if settings.SIMPLE_JWT.get("ROTATE_REFRESH_TOKENS"):
-            refresh.set_jti()
-            refresh.set_exp()
-            refresh.set_iat()
-            data["refresh"] = str(refresh)
+            if settings.SIMPLE_JWT.get("ROTATE_REFRESH_TOKENS"):
+                refresh.set_jti()
+                refresh.set_exp()
+                refresh.set_iat()
+                data["refresh"] = str(refresh)
 
-        return ok(data, message="Token refreshed.")
+            return ok(data, message="Token refreshed.")
+
+        try:
+            tokens = rotate(raw)
+        except TokenReuseError as exc:
+            return fail(str(exc), status=401)
+        except TokenInvalidError as exc:
+            return fail(str(exc), status=401)
+
+        return ok(tokens, message="Token refreshed.")
+
+
+class LogoutView(APIView):
+    """Revoke the presenting device's whole refresh chain.
+
+    Unauthenticated by design: the refresh token in the body IS the proof of
+    identity, and a client whose access token has already expired must still
+    be able to log out.
+    """
+
+    permission_classes = [AllowAny]
+    authentication_classes = []
+
+    def post(self, request):
+        serializer = RefreshSerializer(data=request.data)
+        if not serializer.is_valid():
+            return fail("Invalid logout request.", errors=serializer.errors, status=400)
+
+        try:
+            token = RefreshToken(serializer.validated_data["refresh"])
+        except TokenError:
+            # An unparseable token means there is nothing to revoke. Report
+            # success so logout is never a dead end for the client.
+            return ok(None, message="Logged out.")
+
+        record = RefreshTokenRecord.objects.filter(jti=token["jti"]).first()
+        if record is not None:
+            revoke_device_chain(record.device)
+
+        return ok(None, message="Logged out.")
 
 
 class MeView(APIView):
@@ -612,3 +685,36 @@ class PlatformAdminView(APIView):
             message="Admin created.",
             status=201,
         )
+
+
+class DeviceListView(APIView):
+    """GET /api/v1/auth/devices — the caller's own registered devices."""
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        devices = Device.objects.filter(
+            user_id=request.user.id, tenant_id=request.user.tenant_id
+        ).order_by("-last_seen_at")
+        return ok(DeviceSerializer(devices, many=True).data)
+
+
+class DeviceRevokeView(APIView):
+    """DELETE /api/v1/auth/devices/<device_id> — sign one device out.
+
+    Scoped to the caller's own devices: a device_id belonging to someone else
+    is reported as not found rather than forbidden, so the endpoint cannot be
+    used to probe which device ids exist.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def delete(self, request, device_id):
+        device = Device.objects.filter(
+            user_id=request.user.id, tenant_id=request.user.tenant_id, device_id=device_id
+        ).first()
+        if device is None:
+            return fail("Device not found.", status=404)
+
+        revoke_device_chain(device)
+        return ok(None, message="Device signed out.")

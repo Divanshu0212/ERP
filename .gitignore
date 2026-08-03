@@ -20,3 +20,15 @@ docs/superpowers/HANDOFF.md
 docs/superpowers/HANDOFF.md
 docs/RUNBOOK.md
 .vscode/settings.json
+
+# mobile app build artifacts
+mobile/su-erp-app/node_modules/
+mobile/su-erp-app/.expo/
+mobile/su-erp-app/.env
+mobile/su-erp-app/expo-env.d.ts
+mobile/su-erp-app/dist/
+
+# Uploaded grievance evidence (local dev; object storage in deployment)
+services/*/media/
+infra/tunnel-url.txt
+infra/tunnel.log

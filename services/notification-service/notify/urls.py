@@ -4,9 +4,10 @@ Included under /api/v1/notify/ from config.urls.
 """
 
 from django.urls import path
-from notify.views import InboxListView, MarkReadView
+from notify.views import InboxListView, MarkReadView, PushDeviceView
 
 urlpatterns = [
     path("inbox", InboxListView.as_view(), name="inbox-list"),
     path("inbox/<uuid:pk>/read", MarkReadView.as_view(), name="inbox-mark-read"),
+    path("devices", PushDeviceView.as_view(), name="push-device-register"),
 ]

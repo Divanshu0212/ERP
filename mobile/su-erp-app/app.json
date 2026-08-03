@@ -1,0 +1,51 @@
+{
+  "expo": {
+    "name": "SU-ERP",
+    "slug": "su-erp-app",
+    "scheme": "suerp",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "package": "com.divanshu0212.suerp",
+      "adaptiveIcon": {
+        "backgroundColor": "#E6F4FE",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      "expo-sqlite",
+      "expo-sharing",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "SU-ERP uses the camera to scan passes and attach photos to complaints."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "cameraPermission": "SU-ERP uses the camera to photograph what you are reporting."
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "SU-ERP uses your location to confirm you are in the classroom when marking attendance."
+        }
+      ]
+    ]
+  }
+}

@@ -270,3 +270,79 @@ class LoginAudit(models.Model):
 
     def __str__(self):
         return f"{self.email} @ {self.timestamp} ({'ok' if self.success else 'fail'})"
+
+
+class Device(models.Model):
+    """A mobile device bound to one user.
+
+    The app generates ``device_id`` once and keeps it in SecureStore, so it
+    survives reinstall-free relaunches and identifies the same physical
+    device across logins. Refresh-token chains are bound to a device
+    (see ``RefreshTokenRecord.device``), which is what makes per-device
+    revocation possible. This table doubles as the push-token registry — one
+    row per device serves both concerns.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(Institution, on_delete=models.PROTECT, related_name="devices")
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="devices")
+    device_id = models.CharField(max_length=64)
+    platform = models.CharField(max_length=16)
+    model_name = models.CharField(max_length=128, blank=True, default="")
+    push_token = models.CharField(max_length=255, blank=True, default="")
+    is_stale = models.BooleanField(default=False)
+    last_seen_at = models.DateTimeField(auto_now=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["user", "device_id"], name="unique_device_per_user"),
+        ]
+        indexes = [
+            models.Index(fields=["tenant", "user"], name="device_tenant_user"),
+        ]
+
+    def __str__(self):
+        return f"{self.platform}:{self.device_id} ({self.user_id})"
+
+
+class RefreshTokenRecord(models.Model):
+    """One issued refresh token, tracked so it can be rotated and revoked.
+
+    SimpleJWT's refresh tokens are stateless by default: anyone holding a
+    signed token can refresh forever and there is no logout. A mobile client
+    needs both. Persisting one row per issued token turns the chain into
+    something the server controls — ``replaced_by`` links each token to its
+    successor, so presenting an already-rotated token proves the token was
+    captured, and the whole chain can be revoked in response.
+
+    Named ``RefreshTokenRecord`` rather than ``RefreshToken`` because
+    ``accounts/views.py`` already imports SimpleJWT's ``RefreshToken`` class.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(Institution, on_delete=models.PROTECT, related_name="refresh_tokens")
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="refresh_tokens")
+    device = models.ForeignKey(Device, on_delete=models.CASCADE, related_name="refresh_tokens")
+    jti = models.CharField(max_length=64, unique=True)
+    expires_at = models.DateTimeField()
+    revoked_at = models.DateTimeField(null=True, blank=True)
+    replaced_by = models.OneToOneField(
+        "self", on_delete=models.SET_NULL, null=True, blank=True, related_name="replaces"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["user", "device"], name="refresh_user_device"),
+        ]
+
+    @property
+    def is_live(self) -> bool:
+        """Usable right now: neither revoked nor past its expiry."""
+        from django.utils import timezone as _tz
+
+        return self.revoked_at is None and self.expires_at > _tz.now()
+
+    def __str__(self):
+        return f"{self.jti} ({'live' if self.is_live else 'dead'})"

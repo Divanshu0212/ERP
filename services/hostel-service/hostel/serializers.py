@@ -12,6 +12,7 @@ from hostel.models import (
     Block,
     Room,
     RoomRequest,
+    VisitorLog,
 )
 from rest_framework import serializers
 
@@ -159,3 +160,19 @@ class RoomRequestApproveSerializer(serializers.Serializer):
 
 class RoomRequestRejectSerializer(serializers.Serializer):
     rejection_reason = serializers.CharField(max_length=500, required=False, default="")
+
+
+class VisitorLogSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = VisitorLog
+        fields = [
+            "id",
+            "visitor_name",
+            "visiting_user_code",
+            "purpose",
+            "phone",
+            "logged_by",
+            "checked_in_at",
+            "checked_out_at",
+        ]
+        read_only_fields = ["id", "logged_by", "checked_in_at", "checked_out_at"]

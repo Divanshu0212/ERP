@@ -282,3 +282,34 @@ class AllocationImportRow(TenantModel):
 
     def __str__(self):
         return f"ImportRow {self.row_number} of batch {self.batch_id} ({self.status})"
+
+
+class VisitorLog(TenantModel):
+    """A visitor signed in at the hostel gate.
+
+    Recorded on a warden's phone at the gate, which is exactly where the
+    signal is worst — so the app queues these and replays them (see the
+    mobile offline queue). ``checked_out_at`` stays null until the visitor
+    leaves, which is what makes "who is still inside" answerable.
+
+    ``visiting_user_code`` and ``logged_by`` are bare strings holding
+    auth-service's ``user_code``, for the same DB-per-service reason as the
+    rest of this module.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    visitor_name = models.CharField(max_length=255)
+    visiting_user_code = models.CharField(max_length=30)
+    purpose = models.CharField(max_length=255, blank=True, default="")
+    phone = models.CharField(max_length=20, blank=True, default="")
+    logged_by = models.CharField(max_length=30)
+    checked_in_at = models.DateTimeField(auto_now_add=True)
+    checked_out_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["visiting_user_code"], name="visitor_student_idx"),
+        ]
+
+    def __str__(self):
+        return f"{self.visitor_name} -> {self.visiting_user_code}"

@@ -31,9 +31,40 @@ Each handler:
    finance consumer docstring for the full rationale.
 """
 
+import logging
+
 from django.db import transaction
-from notify.models import Notification
+from notify.models import Notification, PushDevice
 from suerp_common.inbox import idempotent
+
+logger = logging.getLogger(__name__)
+
+
+def _push(tenant_id, user_code: str, title: str, body: str, data: dict | None = None) -> None:
+    """Best-effort push to a recipient's live devices.
+
+    Called after the inbox row is written, and swallows everything: the row is
+    the source of truth, so a push outage must never roll back a notification
+    or abort the consumer — that would make a notification failure look like a
+    payment failure. Tokens the provider reports dead are marked stale so the
+    next event skips them.
+    """
+    try:
+        from notify import push  # noqa: PLC0415  (import here so tests can patch get_channel)
+
+        devices = list(
+            PushDevice.all_objects.filter(
+                tenant_id=tenant_id, user_code=user_code, is_stale=False
+            )
+        )
+        tokens = [device.push_token for device in devices]
+
+        stale = push.get_channel().send(tokens, title, body, data or {})
+
+        if stale:
+            PushDevice.all_objects.filter(push_token__in=stale).update(is_stale=True)
+    except Exception:
+        logger.exception("Push delivery failed; the inbox row is unaffected.")
 
 
 @idempotent
@@ -48,13 +79,18 @@ def handle_payment_success(event: dict) -> None:
     purpose = payload.get("purpose", "")
     amount = payload.get("amount", "")
 
+    title = "Payment successful"
+    body = f"Your {purpose} payment of {amount} was received."
+
     with transaction.atomic():
         Notification.all_objects.create(
             tenant_id=tenant_id,
             user_code=student_user_code,
-            title="Payment successful",
-            body=f"Your {purpose} payment of {amount} was received.",
+            title=title,
+            body=body,
         )
+
+    _push(tenant_id, student_user_code, title, body, {"path": "/(student)/fees"})
 
 
 @idempotent
@@ -67,13 +103,18 @@ def handle_allocation_confirmed(event: dict) -> None:
     payload = event["payload"]
     student_user_code = payload["student_user_code"]
 
+    title = "Hostel room confirmed"
+    body = "Your hostel room allocation is confirmed."
+
     with transaction.atomic():
         Notification.all_objects.create(
             tenant_id=tenant_id,
             user_code=student_user_code,
-            title="Hostel room confirmed",
-            body="Your hostel room allocation is confirmed.",
+            title=title,
+            body=body,
         )
+
+    _push(tenant_id, student_user_code, title, body, {"path": "/(student)/hostel"})
 
 
 @idempotent
@@ -95,13 +136,18 @@ def handle_grievance_scored(event: dict) -> None:
 
     urgency = payload.get("urgency", "")
 
+    title = "Grievance update"
+    body = f"Your grievance was assessed: urgency {urgency}."
+
     with transaction.atomic():
         Notification.all_objects.create(
             tenant_id=tenant_id,
             user_code=recipient_code,
-            title="Grievance update",
-            body=f"Your grievance was assessed: urgency {urgency}.",
+            title=title,
+            body=body,
         )
+
+    _push(tenant_id, recipient_code, title, body, {"path": "/(student)/grievance"})
 
 
 # Route each delivered event to its handler by ``type``. The management command

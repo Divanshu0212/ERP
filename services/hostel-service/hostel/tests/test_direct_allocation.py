@@ -13,7 +13,7 @@ from suerp_common.outbox import OutboxEvent
 
 pytestmark = pytest.mark.django_db
 
-from hostel.tests.test_allocate import _make_room  # noqa: E402
+from hostel.tests.test_allocate import _future_due_date, _make_room  # noqa: E402
 
 
 def test_no_fee_confirms_immediately_no_event():
@@ -36,7 +36,7 @@ def test_fee_with_due_date_stays_pending_and_publishes_event():
     tenant_id = uuid.uuid4()
     room = _make_room(tenant_id, capacity=2, occupied_count=0, room_no="101")
     fee_structure_id = uuid.uuid4()
-    due_date = "2026-08-01"
+    due_date = _future_due_date()
 
     allocation = create_allocation(
         room.id,
