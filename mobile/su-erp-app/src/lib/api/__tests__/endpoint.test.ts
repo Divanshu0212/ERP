@@ -79,3 +79,44 @@ test('concurrent callers share one probe', async () => {
 test('currentBaseUrl is usable before any probe resolves', () => {
   expect(currentBaseUrl()).toBe(TUNNEL);
 });
+
+describe('discovery', () => {
+  const DISCOVERED = 'https://fresh-tunnel.example.com';
+  const DISCOVERY_URL = 'https://gist.example.com/url.txt';
+
+  test('a discovered URL is preferred when the baked-in ones are dead', async () => {
+    // The exact shape of a shipped APK whose quick tunnel has been restarted:
+    // the baked-in hostname no longer resolves, and localhost is meaningless
+    // on a phone that is not plugged in.
+    resetEndpointForTests({ candidates: [TUNNEL, LOCAL], discoveryUrl: DISCOVERY_URL });
+
+    (global.fetch as jest.Mock).mockImplementation((url: string) => {
+      if (url === DISCOVERY_URL) {
+        return Promise.resolve({ ok: true, status: 200, text: async () => DISCOVERED });
+      }
+      if (url.startsWith(DISCOVERED)) return Promise.resolve({ ok: true, status: 200 } as Response);
+      return Promise.reject(new Error('unreachable'));
+    });
+
+    expect(await resolveBaseUrl()).toBe(DISCOVERED);
+  });
+
+  test('discovery is skipped entirely when a baked-in endpoint answers', async () => {
+    resetEndpointForTests({ candidates: [TUNNEL, LOCAL], discoveryUrl: DISCOVERY_URL });
+    mockReachable([TUNNEL, LOCAL]);
+
+    expect(await resolveBaseUrl()).toBe(TUNNEL);
+    expect(global.fetch).not.toHaveBeenCalledWith(DISCOVERY_URL, expect.anything());
+  });
+
+  test('a broken discovery response does not throw', async () => {
+    resetEndpointForTests({ candidates: [TUNNEL, LOCAL], discoveryUrl: DISCOVERY_URL });
+    (global.fetch as jest.Mock).mockImplementation((url: string) =>
+      url === DISCOVERY_URL
+        ? Promise.resolve({ ok: true, status: 200, text: async () => 'not-a-url' })
+        : Promise.reject(new Error('unreachable')),
+    );
+
+    expect(await resolveBaseUrl()).toBe(TUNNEL);
+  });
+});

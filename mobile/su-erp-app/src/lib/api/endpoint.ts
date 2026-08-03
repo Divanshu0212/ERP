@@ -34,6 +34,22 @@ function envCandidates(): string[] {
 
 export let CANDIDATES: string[] = envCandidates();
 
+/**
+ * A stable URL holding the *current* gateway address as plain text.
+ *
+ * This exists for the installed APK. `EXPO_PUBLIC_*` values are compiled into
+ * the bundle at build time, so an APK built against a quick tunnel points at a
+ * hostname that dies the next time `cloudflared` restarts — and `localhost` is
+ * meaningless on a phone that is not plugged in, so the app would have no way
+ * back. Publishing the live URL somewhere stable (a GitHub gist, a pinned
+ * file, any static host) lets a shipped build re-find the server without
+ * being rebuilt.
+ *
+ * Unset by default: it costs a round-trip and is only consulted when every
+ * baked-in candidate is already dead.
+ */
+let discoveryUrl: string | undefined = process.env.EXPO_PUBLIC_API_DISCOVERY_URL;
+
 /** The endpoint currently believed good. Null until the first probe lands. */
 let resolved: string | null = null;
 /** Concurrent callers share one probe rather than starting a race each. */
@@ -65,12 +81,48 @@ async function answers(origin: string): Promise<boolean> {
   }
 }
 
+/**
+ * Ask the discovery URL where the gateway moved to. Never throws — a failed
+ * lookup just means the caller falls through to its own fallback.
+ */
+async function discover(): Promise<string | null> {
+  if (!discoveryUrl) return null;
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), PROBE_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(discoveryUrl, { signal: controller.signal });
+    if (!response.ok) return null;
+
+    const candidate = (await response.text()).trim();
+    // Anything that is not an http(s) origin is a stale file, an HTML error
+    // page, or a typo — none of which should become a base URL.
+    if (!/^https?:\/\/\S+$/.test(candidate)) return null;
+
+    return (await answers(candidate)) ? candidate : null;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function probe(): Promise<string> {
   for (const candidate of CANDIDATES) {
     if (await answers(candidate)) {
       resolved = candidate;
       return candidate;
     }
+  }
+
+  // Every baked-in address is dead. In a shipped APK that usually means the
+  // tunnel was restarted with a new hostname, which discovery can recover
+  // from; in dev it means the stack is down, and discovery is unset anyway.
+  const discovered = await discover();
+  if (discovered) {
+    resolved = discovered;
+    return discovered;
   }
 
   // Nothing answered. That usually means the phone is offline, not that the
@@ -103,8 +155,12 @@ export function invalidateBaseUrl(): void {
 }
 
 /** Test seam — resets module state and lets a test pin the candidate list. */
-export function resetEndpointForTests(options?: { candidates?: string[] }): void {
+export function resetEndpointForTests(options?: {
+  candidates?: string[];
+  discoveryUrl?: string;
+}): void {
   CANDIDATES = options?.candidates ?? envCandidates();
+  discoveryUrl = options?.discoveryUrl;
   resolved = null;
   inFlight = null;
 }

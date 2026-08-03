@@ -692,3 +692,102 @@ Recorded honestly rather than left implied:
 - **The faculty page's manual roll form posts to a route that does not
   exist** (`/api/v1/attendance/records`; the real one is
   `/api/v1/attendance/`). Predates this phase.
+
+---
+
+# Running the app without USB — server mode and APK builds
+
+Two separate problems: reaching the backend from a phone that is not plugged
+in, and installing the app on a phone that has no Expo Go.
+
+## 1. Expose the backend
+
+```bash
+./scripts/server.sh up full     # "full" so attendance-service is included
+./scripts/tunnel.sh             # prints a public https:// URL, keep it open
+```
+
+`scripts/tunnel.sh` refuses to start if the gateway is not answering, because
+a tunnel to a dead gateway produces a public URL that 502s — a confusing thing
+to hand someone.
+
+The gateway is the *only* published port (`8080`). The 14 services listen on
+`8000` inside the Docker network and are not reachable from the host, so one
+tunnel covers the entire backend.
+
+## 2. How the app finds the backend
+
+`src/lib/api/endpoint.ts` resolves the gateway origin at runtime, in order:
+
+1. `EXPO_PUBLIC_API_TUNNEL_URL` — works from anywhere
+2. `EXPO_PUBLIC_API_BASE_URL` — localhost over `adb reverse`, or a LAN IP
+3. `EXPO_PUBLIC_API_DISCOVERY_URL` — consulted **only** when 1 and 2 are both
+   dead; fetches the current URL as plain text
+
+The first that answers `/health` wins, and a failed request invalidates the
+choice so the next call re-probes. That is what lets a phone move from the
+desk to mobile data without an edit.
+
+### Why discovery exists
+
+`EXPO_PUBLIC_*` values are compiled into the JS bundle **at build time**. An
+APK built against a quick tunnel points at a hostname that dies the moment
+`cloudflared` restarts — and `localhost` means the phone itself, so a shipped
+build would have no way back to the server without being rebuilt.
+
+Publishing the live URL as plain text somewhere stable (a GitHub gist raw URL,
+any static host) and setting `EXPO_PUBLIC_API_DISCOVERY_URL` to it lets an
+installed APK re-find the server on its own. Update the file each time the
+tunnel restarts; the APK does not change.
+
+A **named tunnel** on a domain you own avoids the whole problem — the hostname
+is stable, so bake it in once and skip discovery:
+
+```bash
+TUNNEL_NAME=suerp TUNNEL_HOSTNAME=api.example.com ./scripts/tunnel.sh
+```
+
+## 3. Build the APK
+
+Managed workflow, so no local Android SDK is needed — EAS builds in the cloud.
+
+```bash
+cd mobile/su-erp-app
+npm install -g eas-cli
+eas login                                  # free Expo account
+eas build -p android --profile preview     # ~10-20 min, prints a download link
+```
+
+`preview` is the profile that yields an installable APK
+(`distribution: internal` + `buildType: apk`). `production` produces an
+`.aab` for the Play Store, which a phone cannot sideload.
+
+**Build-time env vars live in `eas.json`, not `.env`.** EAS uploads only
+git-tracked files and `mobile/su-erp-app/.env` is gitignored, so values there
+are silently absent from the build and the APK quietly falls back to
+`localhost`. Put them under `build.preview.env` and update that entry when the
+tunnel URL changes.
+
+Install by opening the download link on the phone, or:
+
+```bash
+adb install path/to/build.apk
+```
+
+### The reanimated block and native builds
+
+`metro.config.js` blocks `react-native-reanimated` and
+`react-native-worklets` because **Expo Go** ships a prebuilt `libworklets.so`
+that mismatches the JS side and segfaults on launch. A real APK compiles
+matching native code, so that crash class does not apply to it.
+
+The block is kept anyway: nothing in the app imports either package, they are
+present only as expo-router's optional peers, and removing the block would
+change what ships for no benefit. If motion ever needs reanimated, a custom
+build is the place it becomes possible — not Expo Go.
+
+### Push notifications need the APK
+
+`expo-notifications` cannot do remote push in Expo Go at all (SDK 53 removed
+Android support). Push is therefore only testable from a real build, with
+`PUSH_ENABLED=true` set on notification-service.
