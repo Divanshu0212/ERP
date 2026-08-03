@@ -375,17 +375,19 @@ and `PATCH /grievance/<id>/status` in grievance-service.
 ### Test suites
 
 ```bash
-cd services/hostel-service    && python -m pytest -q   # 94 passed, 4 pre-existing failures
+cd services/hostel-service    && python -m pytest -q   # 98 passed, 4 skipped
 cd ../transport-service       && python -m pytest -q   # 33 passed
 cd ../grievance-service       && python -m pytest -q   # 24 passed
-cd mobile/su-erp-app && npx jest && npx tsc --noEmit    # 99 passed / 19 suites, no type errors
+cd mobile/su-erp-app && npx jest && npx tsc --noEmit    # 107 passed / 19 suites, no type errors
 ```
 
-The four hostel failures (`test_allocate`, `test_allocate_with_fee`,
-`test_room_request_approval` ×2) **predate this phase** and are time-bombed
-fixtures, not regressions: they hard-code `due_date: "2026-08-01"`, which
-`validate_future_due_date` now correctly rejects as being in the past. They
-fail identically on a stashed tree.
+Four hostel tests (`test_allocate`, `test_allocate_with_fee`,
+`test_room_request_approval` ×2) were failing when this phase started — not
+regressions, but time-bombed fixtures: they hard-coded `due_date:
+"2026-08-01"`, which `validate_future_due_date` correctly rejects once that
+date passes. Fixed in `fix(hostel): anchor test due_dates to today`, which
+replaces every literal with `_future_due_date()` / `_past_due_date()` helpers
+computed from `timezone.now()`. The suite can no longer expire.
 
 ### Bringing the stack up
 
@@ -463,11 +465,74 @@ GET /hostel/allocations?status=confirmed (staff token) -> 200
 The app therefore uses `fetchBlockRoster()` against the tenant-scoped
 `AllocationListView`, which its own docstring calls "what a warden needs".
 
-### Not yet verified
+### On-device walkthrough
 
-The on-device walkthrough (Task 7 steps 3–4: running each role on the phone
-over `adb reverse`, and airplane-mode queue replay per role) has **not** been
-performed — no device was attached to this session. The API-level evidence
-above covers every endpoint those steps exercise, but the GPS permission
-prompt, the `watchPosition` stream, and the queue drain on reconnect still
-need a real handset before this phase is signed off as shipped.
+Verified on a **Motorola Edge 50 Fusion** (Android, Expo Go, `adb reverse`),
+signed in as real `warden` / `driver` / `canteen_owner` users rather than an
+admin token — so this is the first run that exercised the actual role gating.
+
+Staff accounts in the `iiitdmj` tenant (`s3cur3-passw0rd`):
+`warden.test@iiitdmj.ac.in` (WRD-001), `driver.test@iiitdmj.ac.in` (DRV-001),
+`canteen.test@iiitdmj.ac.in` (CAN-001).
+
+| Role | On-device check | Result |
+| --- | --- | --- |
+| Warden | Block roster | Room-grouped SectionList, "1 resident across 1 room", header `NEHRU BLOCK - A-101` |
+| Warden | Log visitor | Form clears, list refreshes, row shows "In since 3:12 pm" |
+| Warden | Check out | Row leaves "Currently inside"; server shows `logged_by: WRD-001` with both timestamps |
+| Driver | Start trip | Full-screen running state; GPS permission already granted, `watchPosition` engaged |
+| Driver | Breadcrumbs | **Real fix recorded: `23.182596, 80.024324`** (Jabalpur) with a device-stamped `recorded_at` |
+| Driver | Live position | Returns the newest point immediately after ingest |
+| Driver | Riders | "4 booked seats", seat-ordered 1/2/3/7 — cancelled bookings correctly filtered out |
+| Driver | End trip | `ended_at` stamped; `/live` drops to 404 (dot deleted, not left to expire) |
+| Owner | Order board | Lanes render; `₹30.00` via `Money`, "Hand over" label from `NEXT_LABEL` |
+| Owner | Advance order | Order reaches `completed`, leaves the board; `total` still arrives as a **str** |
+| Owner | Menu availability | Switch persists (`available=false`), row shows "Hidden from students right now." |
+| Owner | Menu price | Commits on blur as `'38.50'` — string end to end, never a number |
+
+The 60-second live-position TTL is real: reading `/live` a couple of minutes
+after the last breadcrumb correctly 404s rather than showing a stale dot.
+
+### Bug found on-device: unreachable ≠ offline
+
+The queue never fired at the gate, and unit tests could not have caught it
+because they mock `request`.
+
+`NetInfo` reports online whenever the **radio** is up. A phone with full bars
+but no route to the gateway therefore took the online path — and `client.ts`
+had no timeout, so `fetch` hung on a dead socket forever. The mutation never
+resolved, never rejected, and never reached the offline queue. Observed
+directly: form stayed populated, no snackbar, nothing sent, and the warden
+would reasonably believe the visitor was logged.
+
+Fixed in `fix(mobile): queue mutations when the server is unreachable`:
+
+- `client.ts` — 12s `AbortController` deadline; unreachable surfaces as
+  `NetworkError`, distinct from an `ApiError` the server actually sent.
+- Queueable mutations treat `NetworkError` as offline and enqueue. HTTP errors
+  still throw, so a request the server *rejected* is never replayed.
+- `connectivity.ts` — drain on the first success after an unreachable failure.
+  NetInfo never fires in this case, so the queue would otherwise sit until an
+  unrelated real network drop.
+
+Re-verified on the device, with isolation proven before each step
+(`adb shell curl ... http://localhost:8080` returning `HTTP:000`):
+
+```
+tunnel down, submit "Replay-Proof"  -> held on device; server still shows only "Asha"
+adb reverse tcp:8080 tcp:8080       -> device->gateway HTTP:401 (reachable)
+pull-to-refresh                     -> server: Replay-Proof | by: WRD-001
+```
+
+**Testing offline over USB is order-sensitive.** Removing the `adb reverse`
+tunnel does not kill an already-open socket, and taps race the teardown — an
+earlier attempt "queued" an entry that had in fact already reached the server.
+Always confirm isolation with `adb shell curl` *before* interacting, and again
+at the moment of submit.
+
+### Known gap (not Phase 3 scope)
+
+The three staff shells have **no sign-out path** — only the student shell has a
+Profile tab. Switching roles on a device currently needs
+`adb shell pm clear host.exp.exponent`. Worth a shared header action in a
+later phase.
