@@ -1,5 +1,11 @@
 import { useConnectivity } from '../../net/connectivity';
-import { OfflineError, fetchInvoices, payInvoice } from '../finance';
+import {
+  OfflineError,
+  createInvoiceOrder,
+  fetchInvoices,
+  forgetInvoiceKey,
+  payInvoice,
+} from '../finance';
 
 jest.mock('../client', () => ({ request: jest.fn() }));
 jest.mock('@react-native-community/netinfo', () => ({ addEventListener: jest.fn(() => () => {}) }));
@@ -18,6 +24,16 @@ test('fetchInvoices hits the invoices endpoint', async () => {
   expect(request).toHaveBeenCalledWith('/api/v1/finance/invoices');
 });
 
+test('createInvoiceOrder opens a razorpay order for the invoice', async () => {
+  request.mockResolvedValue({ order_id: 'order_1', amount: '4500.00', currency: 'INR', key_id: 'k' });
+
+  await createInvoiceOrder('inv-1');
+
+  expect(request).toHaveBeenCalledWith('/api/v1/finance/invoices/inv-1/razorpay-order', {
+    method: 'POST',
+  });
+});
+
 test('payInvoice posts an idempotency key with the invoice id', async () => {
   request.mockResolvedValue({});
 
@@ -28,6 +44,20 @@ test('payInvoice posts an idempotency key with the invoice id', async () => {
   expect(body.idempotency_key).toMatch(/^[0-9a-f-]{36}$/);
 });
 
+test('payInvoice forwards the razorpay proof for server-side verification', async () => {
+  request.mockResolvedValue({});
+
+  await payInvoice('inv-proof', {
+    razorpay_order_id: 'order_x',
+    razorpay_payment_id: 'pay_x',
+    razorpay_signature: 'sig_x',
+  });
+
+  const body = JSON.parse(request.mock.calls[0][1].body);
+  expect(body.razorpay_order_id).toBe('order_x');
+  expect(body.razorpay_signature).toBe('sig_x');
+});
+
 test('payInvoice refuses to run offline instead of queueing', async () => {
   useConnectivity.setState({ online: false });
 
@@ -35,11 +65,17 @@ test('payInvoice refuses to run offline instead of queueing', async () => {
   expect(request).not.toHaveBeenCalled();
 });
 
+test('createInvoiceOrder refuses to run offline', async () => {
+  useConnectivity.setState({ online: false });
+
+  await expect(createInvoiceOrder('inv-1')).rejects.toBeInstanceOf(OfflineError);
+});
+
 test('retrying the same payment reuses its idempotency key', async () => {
   request.mockResolvedValue({});
 
-  await payInvoice('inv-1');
-  await payInvoice('inv-1');
+  await payInvoice('inv-retry');
+  await payInvoice('inv-retry');
 
   const first = JSON.parse(request.mock.calls[0][1].body).idempotency_key;
   const second = JSON.parse(request.mock.calls[1][1].body).idempotency_key;
@@ -49,10 +85,23 @@ test('retrying the same payment reuses its idempotency key', async () => {
 test('a different invoice gets its own key', async () => {
   request.mockResolvedValue({});
 
-  await payInvoice('inv-1');
-  await payInvoice('inv-2');
+  await payInvoice('inv-a');
+  await payInvoice('inv-b');
 
   const first = JSON.parse(request.mock.calls[0][1].body).idempotency_key;
   const second = JSON.parse(request.mock.calls[1][1].body).idempotency_key;
+  expect(second).not.toBe(first);
+});
+
+test('a settled invoice gets a fresh key for a genuinely new payment', async () => {
+  request.mockResolvedValue({});
+
+  await payInvoice('inv-settled');
+  const first = JSON.parse(request.mock.calls[0][1].body).idempotency_key;
+
+  forgetInvoiceKey('inv-settled');
+  await payInvoice('inv-settled');
+  const second = JSON.parse(request.mock.calls[1][1].body).idempotency_key;
+
   expect(second).not.toBe(first);
 });

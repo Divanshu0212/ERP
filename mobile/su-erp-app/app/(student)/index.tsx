@@ -6,6 +6,7 @@ import { Money } from '@/components/Money';
 import { OfflineBanner } from '@/components/OfflineBanner';
 import { Press } from '@/components/Press';
 import { Body, Card, Label, Screen, Title } from '@/components/ui';
+import { isActive, useOrders } from '@/features/canteen/useOrders';
 import { INVOICES_KEY, useInvoices } from '@/features/fees/useInvoices';
 import { useMyAllocation } from '@/features/hostel/useHostel';
 import { pendingTotal } from '@/features/home/summary';
@@ -45,6 +46,8 @@ export default function StudentHome() {
   const { data: invoices } = useInvoices();
   const allocation = useMyAllocation();
   const unread = useUnreadCount();
+  const { data: orders } = useOrders();
+  const activeOrders = (orders?.results ?? []).filter(isActive).length;
 
   const pending = (invoices?.results ?? []).filter((i) => i.status === 'pending');
   const dues = pendingTotal(invoices?.results ?? []);
@@ -89,6 +92,17 @@ export default function StudentHome() {
             icon="bus"
             label="Bus"
             detail="Book a seat on a campus route"
+          />
+
+          <Shortcut
+            href="/(student)/orders"
+            icon="receipt"
+            label="Orders"
+            detail={
+              activeOrders === 0
+                ? 'Your canteen order history'
+                : `${activeOrders} order${activeOrders === 1 ? '' : 's'} in progress`
+            }
           />
 
           <Shortcut

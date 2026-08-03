@@ -46,7 +46,13 @@ docker exec finance-service python -c "
 import django, os
 os.environ.setdefault('DJANGO_SETTINGS_MODULE','config.settings')
 django.setup()
-from billing.models import Invoice
+import uuid
+from billing.models import Invoice, Payment, Receipt
+from billing.receipts import generate_receipt
+from suerp_common.tenancy import set_current_tenant
+
+set_current_tenant('$TENANT')
+
 rows = [
     ('Hostel fee - Autumn 2026', '45000.00', 'pending'),
     ('Mess advance - August', '6500.00', 'pending'),
@@ -54,11 +60,25 @@ rows = [
     ('Library fine', '250.00', 'paid'),
 ]
 for purpose, amount, status in rows:
-    Invoice.all_objects.get_or_create(
+    invoice, _ = Invoice.all_objects.get_or_create(
         tenant_id='$TENANT', student_user_code='$STUDENT', purpose=purpose,
         defaults=dict(amount=amount, status=status),
     )
+    # A paid invoice needs a Payment and a Receipt behind it, or the app's
+    # 'View receipt' button 404s. Flipping status alone is not enough.
+    if status == 'paid' and not Payment.all_objects.filter(invoice=invoice).exists():
+        payment = Payment.all_objects.create(
+            tenant_id='$TENANT', invoice=invoice, amount=invoice.amount,
+            status='success', idempotency_key=str(uuid.uuid4()),
+            gateway_ref=f'SEED-{uuid.uuid4().hex[:10]}',
+        )
+        try:
+            generate_receipt(payment)
+        except Exception as exc:
+            print('  receipt skipped for', purpose, '-', exc)
+
 print('invoices:', Invoice.all_objects.filter(tenant_id='$TENANT', student_user_code='$STUDENT').count())
+print('receipts:', Receipt.all_objects.filter(tenant_id='$TENANT').count())
 "
 
 echo "--- notifications ---"

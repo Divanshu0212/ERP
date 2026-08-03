@@ -12,6 +12,10 @@ import {
   usePayInvoice,
 } from '@/features/fees/useInvoices';
 import { pendingTotal } from '@/features/home/summary';
+import { RazorpayCheckout } from '@/features/payments/RazorpayCheckout';
+import { useCheckout } from '@/features/payments/usePayment';
+import { ReceiptViewer } from '@/features/receipts/ReceiptViewer';
+import { useReceipt } from '@/features/receipts/useReceipt';
 import { cacheAge } from '@/lib/query/persister';
 
 const STATUS_STYLE: Record<string, string> = {
@@ -34,11 +38,15 @@ function StatusPill({ status }: { status: string }) {
 function InvoiceRow({
   invoice,
   onPay,
+  onReceipt,
   busy,
+  receiptBusy,
 }: {
   invoice: Invoice;
-  onPay: (id: string) => void;
+  onPay: (invoice: Invoice) => void;
+  onReceipt: (invoice: Invoice) => void;
   busy: boolean;
+  receiptBusy: boolean;
 }) {
   return (
     <Card className="mx-4 mb-3 gap-3">
@@ -46,7 +54,8 @@ function InvoiceRow({
         <View className="flex-1 gap-1">
           <Text className="text-heading font-semibold text-ink">{invoice.purpose}</Text>
           <Text className="text-detail text-ink-faint">
-            Raised {new Date(invoice.created_at).toLocaleDateString([], {
+            Raised{' '}
+            {new Date(invoice.created_at).toLocaleDateString([], {
               day: 'numeric',
               month: 'short',
               year: 'numeric',
@@ -59,7 +68,16 @@ function InvoiceRow({
       <StatusPill status={invoice.status} />
 
       {invoice.status === 'pending' ? (
-        <Button label={busy ? 'Paying' : 'Pay now'} busy={busy} onPress={() => onPay(invoice.id)} />
+        <Button label={busy ? 'Paying' : 'Pay now'} busy={busy} onPress={() => onPay(invoice)} />
+      ) : null}
+
+      {invoice.status === 'paid' ? (
+        <Button
+          label={receiptBusy ? 'Opening' : 'View receipt'}
+          tone="quiet"
+          busy={receiptBusy}
+          onPress={() => onReceipt(invoice)}
+        />
       ) : null}
     </Card>
   );
@@ -67,21 +85,32 @@ function InvoiceRow({
 
 export default function FeesScreen() {
   const { data, isLoading, isError, refetch, isRefetching } = useInvoices();
-  const pay = usePayInvoice();
+  const checkout = useCheckout();
+  const pay = usePayInvoice(checkout.run);
+  const receipt = useReceipt();
   const snack = useSnackbar();
 
   const invoices = data?.results ?? [];
   const pending = invoices.filter((i) => i.status === 'pending');
   const dues = pendingTotal(invoices);
 
-  function onPay(invoiceId: string) {
-    pay.mutate(invoiceId, {
-      onSuccess: () => snack.show('Payment recorded.'),
-      onError: (error) => {
-        // Dismissing the fingerprint prompt is a choice, not a failure.
-        if (error instanceof PaymentCancelled) return;
-        snack.show((error as Error).message, 'critical');
+  function onPay(invoice: Invoice) {
+    pay.mutate(
+      { invoiceId: invoice.id, purpose: invoice.purpose },
+      {
+        onSuccess: () => snack.show('Payment recorded.'),
+        onError: (error) => {
+          // Backing out of the fingerprint prompt or the widget is a choice.
+          if (error instanceof PaymentCancelled) return;
+          snack.show((error as Error).message, 'critical');
+        },
       },
+    );
+  }
+
+  function onReceipt(invoice: Invoice) {
+    receipt.open.mutate(invoice.id, {
+      onError: (error) => snack.show((error as Error).message, 'critical'),
     });
   }
 
@@ -122,10 +151,20 @@ export default function FeesScreen() {
           <InvoiceRow
             invoice={item}
             onPay={onPay}
-            busy={pay.isPending && pay.variables === item.id}
+            onReceipt={onReceipt}
+            busy={pay.isPending && pay.variables?.invoiceId === item.id}
+            receiptBusy={receipt.open.isPending && receipt.open.variables === item.id}
           />
         )}
       />
+
+      <RazorpayCheckout
+        order={checkout.pending?.order ?? null}
+        description={checkout.pending?.description ?? ''}
+        onDone={(result) => checkout.pending?.settle(result)}
+      />
+
+      <ReceiptViewer base64={receipt.base64} onClose={receipt.close} onShare={receipt.share} />
 
       <Snackbar message={snack.message} onDone={snack.clear} />
     </Screen>

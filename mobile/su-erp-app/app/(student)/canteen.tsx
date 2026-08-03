@@ -1,52 +1,19 @@
-import type { MenuItem, Order } from '@api-types/index';
+import type { MenuItem } from '@api-types/index';
+import { Link } from 'expo-router';
 import { FlatList, Text, View } from 'react-native';
 
 import { Money } from '@/components/Money';
 import { OfflineBanner } from '@/components/OfflineBanner';
 import { Press } from '@/components/Press';
 import { Snackbar, useSnackbar } from '@/components/Snackbar';
-import { Body, Button, Card, Label, ListState, Screen, Title } from '@/components/ui';
+import { Body, Button, ListState, Screen, Title } from '@/components/ui';
+import { OrderCard } from '@/features/canteen/OrderCard';
 import { useCart } from '@/features/canteen/useCart';
 import { MENU_KEY, useMenu } from '@/features/canteen/useMenu';
-import { isActive, useOrders, usePlaceOrder } from '@/features/canteen/useOrders';
+import { OrderCancelled, isActive, useOrders, usePlaceOrder } from '@/features/canteen/useOrders';
+import { RazorpayCheckout } from '@/features/payments/RazorpayCheckout';
+import { useCheckout } from '@/features/payments/usePayment';
 import { cacheAge } from '@/lib/query/persister';
-
-/** Kitchen states in the order they happen, so the student can see progress. */
-const STAGES: Order['status'][] = ['placed', 'preparing', 'ready'];
-
-const STAGE_COPY: Record<string, string> = {
-  placed: 'Order placed',
-  preparing: 'Being prepared',
-  ready: 'Ready for pickup',
-};
-
-function ActiveOrder({ order }: { order: Order }) {
-  const reached = STAGES.indexOf(order.status);
-
-  return (
-    <Card className="mx-4 mb-3 gap-3 border-brand/30 bg-brand-wash">
-      <View className="flex-row items-center justify-between">
-        <Label>{STAGE_COPY[order.status] ?? order.status}</Label>
-        <Money value={order.total} className="text-body font-semibold text-ink" />
-      </View>
-
-      {/* Three segments beat a spinner: the student can see how far along the
-          kitchen is and roughly when to walk over. */}
-      <View className="flex-row gap-1.5">
-        {STAGES.map((stage, index) => (
-          <View
-            key={stage}
-            className={`h-1 flex-1 rounded-full ${index <= reached ? 'bg-brand' : 'bg-surface-border'}`}
-          />
-        ))}
-      </View>
-
-      <Text className="text-detail text-ink-muted">
-        {order.items.map((i) => `${i.quantity}x ${i.name}`).join(', ')}
-      </Text>
-    </Card>
-  );
-}
 
 function MenuRow({ item }: { item: MenuItem }) {
   const quantity = useCart((s) => s.lines[item.id] ?? 0);
@@ -118,22 +85,26 @@ export default function CanteenScreen() {
   const { data: menu, isLoading, isError, refetch, isRefetching } = useMenu();
   const { data: orders } = useOrders();
   const lines = useCart((s) => s.lines);
-  const toLines = useCart((s) => s.toLines);
   const count = useCart((s) => s.count);
-  const place = usePlaceOrder();
+  const checkout = useCheckout();
+  const place = usePlaceOrder(checkout.run);
   const snack = useSnackbar();
 
   const items = menu?.results ?? [];
   const active = (orders?.results ?? []).filter(isActive);
 
-  // Priced from the menu the student is looking at, so the cart bar can show a
-  // total before they commit rather than after the server replies.
+  // Priced from the menu on screen so the cart bar can show a total before the
+  // student commits. The server prices the cart again at checkout — this
+  // number is for reading, never for charging.
   const total = items.reduce((sum, item) => sum + Number(item.price) * (lines[item.id] ?? 0), 0);
 
-  function checkout() {
-    place.mutate(toLines(), {
+  function onCheckout() {
+    place.mutate(undefined, {
       onSuccess: () => snack.show('Order placed.'),
-      onError: (e) => snack.show((e as Error).message, 'critical'),
+      onError: (e) => {
+        if (e instanceof OrderCancelled) return;
+        snack.show((e as Error).message, 'critical');
+      },
     });
   }
 
@@ -146,14 +117,22 @@ export default function CanteenScreen() {
         keyExtractor={(m) => m.id}
         refreshing={isRefetching}
         onRefresh={refetch}
-        contentContainerStyle={{ paddingBottom: count() > 0 ? 96 : 8 }}
+        contentContainerStyle={{ paddingBottom: count() > 0 ? 112 : 8 }}
         ListHeaderComponent={
           <View className="gap-3 pb-1 pt-2">
-            <View className="px-4">
+            <View className="flex-row items-center justify-between px-4">
               <Title>Canteen</Title>
+              <Link href="/(student)/orders" asChild>
+                <Press accessibilityRole="link" accessibilityLabel="Order history">
+                  <View className="min-h-touch justify-center px-2">
+                    <Text className="text-body font-semibold text-brand">Orders</Text>
+                  </View>
+                </Press>
+              </Link>
             </View>
+
             {active.map((order) => (
-              <ActiveOrder key={order.id} order={order} />
+              <OrderCard key={order.id} order={order} className="mx-4" />
             ))}
           </View>
         }
@@ -177,12 +156,18 @@ export default function CanteenScreen() {
             <Money value={total.toFixed(2)} className="text-heading font-semibold text-ink" />
           </View>
           <Button
-            label={place.isPending ? 'Placing order' : 'Place order'}
+            label={place.isPending ? 'Opening payment' : 'Pay and order'}
             busy={place.isPending}
-            onPress={checkout}
+            onPress={onCheckout}
           />
         </View>
       ) : null}
+
+      <RazorpayCheckout
+        order={checkout.pending?.order ?? null}
+        description={checkout.pending?.description ?? ''}
+        onDone={(result) => checkout.pending?.settle(result)}
+      />
 
       <Snackbar message={snack.message} onDone={snack.clear} />
     </Screen>

@@ -2,7 +2,7 @@ import type { ApiEnvelope, TokenPair } from '@api-types/index';
 
 import { clearRefreshToken, readRefreshToken, saveRefreshToken } from '../auth/storage';
 
-const BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL ?? 'http://localhost:8080';
+export const BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL ?? 'http://localhost:8080';
 
 /**
  * The access token is held here, in memory, for exactly this reason: it has a

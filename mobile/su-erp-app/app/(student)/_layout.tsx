@@ -65,6 +65,7 @@ export default function StudentLayout() {
       {/* Reachable by route, not by tab. */}
       <Tabs.Screen name="hostel" options={{ href: null }} />
       <Tabs.Screen name="transport" options={{ href: null }} />
+      <Tabs.Screen name="orders" options={{ href: null }} />
       <Tabs.Screen name="profile" options={{ href: null }} />
     </Tabs>
   );
