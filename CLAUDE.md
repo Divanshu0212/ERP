@@ -26,7 +26,7 @@ Before claiming mobile work is done: `npx tsc --noEmit`, `npx jest`, and launch 
 
 ## Conventions
 
-- Commit as `Divanshu0212 <divanshubhargava026@gmail.com>`. No Claude co-author trailer.
+- Commit as `Divanshu0212 <divanshu0212@gmail.com>`. No Claude co-author trailer.
 - Commit after every completed task rather than batching.
 - Money fields arrive from DRF `DecimalField` as **strings**. Never do arithmetic without `Number()`.
 - List endpoints return `{results, count, page, num_pages}`, not a bare array.
