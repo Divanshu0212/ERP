@@ -8,6 +8,9 @@ redis
 psycopg[binary]
 django-prometheus
 gunicorn
+# Expo push delivery (notify/push.py). Sync client is fine here: the send is
+# best-effort and already isolated from the consumer by its own try/except.
+requests
 -e ../../shared/libs/suerp_common
 
 # Test tooling

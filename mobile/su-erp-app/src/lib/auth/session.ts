@@ -4,6 +4,7 @@ import { create } from 'zustand';
 import { fetchMe, login as apiLogin, logout as apiLogout } from '../api/auth';
 import { refreshSession, setAccessToken } from '../api/client';
 import { getDeviceId, getModelName, getPlatform } from '../device/identity';
+import { registerPushToken } from '../push/register';
 import { readRefreshToken } from './storage';
 
 /** Roles the app supports. Everyone else is directed to the web portal. */
@@ -53,6 +54,11 @@ export const useSession = create<SessionState>((set) => ({
       model_name: getModelName(),
     });
     set({ user: await fetchMe(), status: 'signed-in' });
+
+    // After the session exists, so the token registers against the right
+    // user. Deliberately not awaited: a denied notification permission must
+    // never hold up entering the app.
+    void registerPushToken();
   },
 
   async signOut() {

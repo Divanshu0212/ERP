@@ -36,3 +36,34 @@ class Notification(TenantModel):
 
     def __str__(self):
         return f"Notification {self.id} -> {self.user_code}"
+
+
+class PushDevice(TenantModel):
+    """Push tokens, projected into this service.
+
+    auth-service owns the authoritative Device row; this is a local copy
+    populated by the app registering its token here after login, because
+    DB-per-service means this service cannot join across to it.
+
+    ``is_stale`` is set when the provider reports the token is dead
+    (uninstalled app, reset device). Stale rows are kept rather than deleted:
+    the same token can come back on re-registration, and the row is the only
+    record that this device was ever reachable.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user_code = models.CharField(max_length=30)
+    push_token = models.CharField(max_length=255, unique=True)
+    is_stale = models.BooleanField(default=False)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        indexes = [
+            models.Index(
+                fields=["tenant_id", "user_code", "is_stale"],
+                name="device_tenant_user_live",
+            ),
+        ]
+
+    def __str__(self):
+        return f"PushDevice {self.user_code} ({'stale' if self.is_stale else 'live'})"

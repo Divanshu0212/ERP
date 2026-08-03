@@ -24,7 +24,30 @@ export default function RootLayout() {
       router.replace('/(auth)/login');
     });
 
-    return startConnectivityWatch();
+    const stopConnectivityWatch = startConnectivityWatch();
+
+    // A push that only opens the app wastes the tap. The consumer puts the
+    // destination in the payload, so a "payment received" push lands on the
+    // fees screen rather than the home screen.
+    //
+    // Imported lazily for the same reason as in lib/push/register.ts: loading
+    // expo-notifications runs a token auto-registration side effect, and it
+    // warns loudly under Expo Go where remote push does not work at all.
+    let removePushListener: (() => void) | null = null;
+    void import('expo-notifications').then((Notifications) => {
+      const subscription = Notifications.addNotificationResponseReceivedListener((response) => {
+        const path = response.notification.request.content.data?.path;
+        if (typeof path === 'string' && path.startsWith('/')) {
+          router.push(path as Parameters<typeof router.push>[0]);
+        }
+      });
+      removePushListener = () => subscription.remove();
+    });
+
+    return () => {
+      stopConnectivityWatch();
+      removePushListener?.();
+    };
   }, []);
 
   return (
