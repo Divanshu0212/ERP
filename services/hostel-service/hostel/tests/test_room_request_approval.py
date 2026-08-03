@@ -13,7 +13,11 @@ import pytest
 pytestmark = pytest.mark.django_db
 
 from hostel.models import Allocation, RoomRequest  # noqa: E402
-from hostel.tests.test_allocate import _auth_client, _make_room  # noqa: E402
+from hostel.tests.test_allocate import (  # noqa: E402
+    _auth_client,
+    _future_due_date,
+    _make_room,
+)
 from suerp_common.outbox import OutboxEvent  # noqa: E402
 
 
@@ -40,7 +44,7 @@ def test_warden_approves_request_creates_allocation_with_fee_and_university(mock
     warden_client = _auth_client(tenant_id, role="warden")
     response = warden_client.post(
         f"/api/v1/hostel/room-requests/{request_id}/approve",
-        {"fee_structure_id": str(fee_structure_id), "due_date": "2026-08-01"},
+        {"fee_structure_id": str(fee_structure_id), "due_date": _future_due_date()},
         format="json",
     )
 
@@ -86,14 +90,14 @@ def test_double_approve_does_not_create_second_allocation(mock_get):
 
     first = warden_client.post(
         f"/api/v1/hostel/room-requests/{request_id}/approve",
-        {"fee_structure_id": str(fee_structure_id), "due_date": "2026-08-01"},
+        {"fee_structure_id": str(fee_structure_id), "due_date": _future_due_date()},
         format="json",
     )
     assert first.status_code == 200, first.content
 
     second = warden_client.post(
         f"/api/v1/hostel/room-requests/{request_id}/approve",
-        {"fee_structure_id": str(fee_structure_id), "due_date": "2026-08-01"},
+        {"fee_structure_id": str(fee_structure_id), "due_date": _future_due_date()},
         format="json",
     )
     assert second.status_code == 400, second.content

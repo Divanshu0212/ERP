@@ -11,7 +11,12 @@ import pytest
 pytestmark = pytest.mark.django_db
 
 from hostel.models import Allocation, RoomRequest  # noqa: E402
-from hostel.tests.test_allocate import _auth_client, _make_room  # noqa: E402
+from hostel.tests.test_allocate import (  # noqa: E402
+    _auth_client,
+    _future_due_date,
+    _make_room,
+    _past_due_date,
+)
 
 
 @patch("hostel.views.resolve_user_by_code")
@@ -65,7 +70,7 @@ def test_allocate_with_fee_and_due_date_stays_pending(mock_resolve):
             "room_id": str(room.id),
             "student_user_code": "STU001",
             "fee_structure_id": str(uuid.uuid4()),
-            "due_date": "2026-08-01",
+            "due_date": _future_due_date(),
         },
         format="json",
     )
@@ -116,7 +121,7 @@ def test_allocate_rejects_past_due_date(mock_resolve):
             "room_id": str(room.id),
             "student_user_code": "STU001",
             "fee_structure_id": str(uuid.uuid4()),
-            "due_date": "2020-01-01",
+            "due_date": _past_due_date(),
         },
         format="json",
     )
@@ -139,7 +144,7 @@ def test_approve_rejects_past_due_date(mock_get):
     warden_client = _auth_client(tenant_id, role="warden")
     response = warden_client.post(
         f"/api/v1/hostel/room-requests/{request_id}/approve",
-        {"fee_structure_id": str(uuid.uuid4()), "due_date": "2020-01-01"},
+        {"fee_structure_id": str(uuid.uuid4()), "due_date": _past_due_date()},
         format="json",
     )
 

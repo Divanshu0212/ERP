@@ -16,16 +16,34 @@ indistinguishable from one auth-service would have issued.
 """
 
 import uuid
+from datetime import timedelta
 from unittest.mock import patch
 
 import jwt
 import pytest
 from django.conf import settings
+from django.utils import timezone
 from hostel.models import Allocation, Block, Room
 from rest_framework.test import APIClient
 from suerp_common.outbox import OutboxEvent
 
 pytestmark = pytest.mark.django_db
+
+
+def _future_due_date(days=30):
+    """A due_date that is always in the future, whenever the suite runs.
+
+    ``validate_future_due_date`` rejects anything on or before today, so a
+    hard-coded literal here is a time bomb: it passes until that date arrives
+    and then fails the suite for reasons that have nothing to do with the code
+    under test. Anchor to today instead.
+    """
+    return (timezone.now().date() + timedelta(days=days)).isoformat()
+
+
+def _past_due_date(days=30):
+    """A due_date that is always in the past — for the rejection tests."""
+    return (timezone.now().date() - timedelta(days=days)).isoformat()
 
 
 def _make_token(tenant_id, user_id=None, role="warden"):
@@ -76,6 +94,7 @@ def test_allocating_available_room_creates_pending_allocation_and_emits_event(mo
         "role": "student",
     }
     client = _auth_client(tenant_id, role="warden")
+    due_date = _future_due_date()
 
     response = client.post(
         "/api/v1/hostel/allocate",
@@ -83,7 +102,7 @@ def test_allocating_available_room_creates_pending_allocation_and_emits_event(mo
             "room_id": str(room.id),
             "student_user_code": student_user_code,
             "fee_structure_id": str(fee_structure_id),
-            "due_date": "2026-08-01",
+            "due_date": due_date,
         },
         format="json",
     )
@@ -114,7 +133,7 @@ def test_allocating_available_room_creates_pending_allocation_and_emits_event(mo
         "room_id": str(room.id),
         "fee_structure_id": str(fee_structure_id),
         "university_name": "",
-        "due_date": "2026-08-01",
+        "due_date": due_date,
     }
 
 

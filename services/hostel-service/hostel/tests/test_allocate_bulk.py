@@ -16,7 +16,11 @@ from hostel.models import Allocation, AllocationImportBatch
 
 pytestmark = pytest.mark.django_db
 
-from hostel.tests.test_allocate import _auth_client, _make_room  # noqa: E402
+from hostel.tests.test_allocate import (  # noqa: E402
+    _auth_client,
+    _make_room,
+    _past_due_date,
+)
 
 
 def _csv_file(rows, filename="import.csv"):
@@ -286,7 +290,7 @@ def test_past_due_date_row_fails_without_aborting_batch(mock_resolve):
     buf, name = _csv_file(
         [
             (str(good_room.id), "STU-1"),
-            (str(bad_room.id), "STU-2", fee_id, "2020-01-01"),
+            (str(bad_room.id), "STU-2", fee_id, _past_due_date()),
         ]
     )
     response = _upload(client, buf, name)
