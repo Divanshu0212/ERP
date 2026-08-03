@@ -1,5 +1,6 @@
 export * from './auth';
 export * from './canteen';
+export * from './driver';
 export * from './envelope';
 export * from './finance';
 export * from './grievance';
