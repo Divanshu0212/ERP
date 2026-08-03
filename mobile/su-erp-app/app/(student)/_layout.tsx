@@ -68,6 +68,7 @@ export default function StudentLayout() {
       <Tabs.Screen name="pass" options={{ href: null }} />
       <Tabs.Screen name="attendance" options={{ href: null }} />
       <Tabs.Screen name="pickup" options={{ href: null }} />
+      <Tabs.Screen name="vault" options={{ href: null }} />
       <Tabs.Screen name="orders" options={{ href: null }} />
       <Tabs.Screen name="profile" options={{ href: null }} />
     </Tabs>

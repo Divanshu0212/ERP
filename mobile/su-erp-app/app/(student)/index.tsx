@@ -127,6 +127,13 @@ export default function StudentHome() {
           />
 
           <Shortcut
+            href="/(student)/vault"
+            icon="folder"
+            label="Documents"
+            detail="Receipts saved on this phone, no signal needed"
+          />
+
+          <Shortcut
             href="/(student)/profile"
             icon="person"
             label="Profile"

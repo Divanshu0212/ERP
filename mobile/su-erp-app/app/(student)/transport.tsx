@@ -6,6 +6,7 @@ import { OfflineBanner } from '@/components/OfflineBanner';
 import { Press } from '@/components/Press';
 import { Snackbar, useSnackbar } from '@/components/Snackbar';
 import { Body, Card, Label, ListState, Screen, Title } from '@/components/ui';
+import { LiveBusMap } from '@/features/bustrack/LiveBusMap';
 import { ROUTES_KEY, useBookSeat, useRoutes, useSeats } from '@/features/transport/useTransport';
 import { cacheAge } from '@/lib/query/persister';
 
@@ -177,6 +178,13 @@ export default function TransportScreen() {
             ))
           )}
         </View>
+
+        {routeId ? (
+          <View className="gap-3 px-4 pt-6">
+            <Label>Where the bus is</Label>
+            <LiveBusMap routeId={routeId} />
+          </View>
+        ) : null}
 
         {routeId ? (
           <View className="gap-3 px-4 pt-6">

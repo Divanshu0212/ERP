@@ -26,7 +26,25 @@
       "expo-router",
       "expo-secure-store",
       "expo-sqlite",
-      "expo-sharing"
+      "expo-sharing",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "SU-ERP uses the camera to scan passes and attach photos to complaints."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "cameraPermission": "SU-ERP uses the camera to photograph what you are reporting."
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "SU-ERP uses your location to confirm you are in the classroom when marking attendance."
+        }
+      ]
     ]
   }
 }
