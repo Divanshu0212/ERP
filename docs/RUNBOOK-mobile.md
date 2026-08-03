@@ -61,16 +61,27 @@ curl -s -o /dev/null -w '%{http_code}\n' http://localhost:8080/api/v1/auth/devic
 
 ## 3. Create a test student
 
-The seeded tenants are `pdpmiiitdmj`, `nitj`, `iitrpr` (plus the internal
-`platform`). Seeded user passwords are not recorded, so make a throwaway:
+The seeded tenant is `iiitdmj` (plus the internal `platform`). Confirm what
+your database actually holds before signing in — a wrong slug fails with
+"Unknown or inactive institution", which reads like a broken app rather than a
+typo:
+
+```bash
+docker compose -f infra/docker-compose.yml exec -T auth-service python manage.py shell -c "
+from accounts.models import Institution
+print([i.slug for i in Institution.objects.all()])
+"
+```
+
+Seeded user passwords are not recorded, so make a throwaway:
 
 ```bash
 docker compose -f infra/docker-compose.yml exec -T auth-service python manage.py shell -c "
 from accounts.models import Institution, User
-inst = Institution.objects.get(slug='pdpmiiitdmj')
+inst = Institution.objects.get(slug='iiitdmj')
 u, _ = User.objects.get_or_create(
     user_code='MOB-TEST-001',
-    defaults=dict(tenant=inst, email='mobile.test@pdpmiiitdmj.ac.in', role=User.Role.STUDENT),
+    defaults=dict(tenant=inst, email='mobile.test@iiitdmj.ac.in', role=User.Role.STUDENT),
 )
 u.set_password('s3cur3-passw0rd')
 u.is_active = True
@@ -85,7 +96,7 @@ u.save()
 ```bash
 BASE=http://localhost:8080/api/v1/auth
 TOKENS=$(curl -s -X POST $BASE/login -H 'Content-Type: application/json' \
-  -d '{"institution_slug":"pdpmiiitdmj","email":"mobile.test@pdpmiiitdmj.ac.in","password":"s3cur3-passw0rd","device_id":"curl-device","platform":"android","model_name":"curl"}')
+  -d '{"institution_slug":"iiitdmj","email":"mobile.test@iiitdmj.ac.in","password":"s3cur3-passw0rd","device_id":"curl-device","platform":"android","model_name":"curl"}')
 REFRESH=$(echo "$TOKENS" | python3 -c 'import sys,json;print(json.load(sys.stdin)["data"]["refresh"])')
 curl -s -X POST $BASE/refresh -H 'Content-Type: application/json' -d "{\"refresh\":\"$REFRESH\"}"
 curl -s -X POST $BASE/refresh -H 'Content-Type: application/json' -d "{\"refresh\":\"$REFRESH\"}"
@@ -249,3 +260,108 @@ project was scaffolded by extracting the template tarball directly:
 npm pack expo-template-blank-typescript@latest --pack-destination .
 tar -xzf expo-template-blank-typescript-*.tgz --strip-components=1
 ```
+
+---
+
+# Phase 2 — student surface
+
+Home, fees, canteen, hostel, transport, grievance, notifications, profile, and
+orders, over a query cache that survives a cold start. Verified end to end on
+2026-08-03 on a Motorola edge 50 fusion (Android 16, Expo Go SDK 57).
+
+## 1. Bring up the services this phase needs
+
+```bash
+docker compose -f infra/docker-compose.yml up -d postgres redis rabbitmq \
+  auth-service hostel-service finance-service canteen-service \
+  transport-service grievance-service notification-service gateway
+```
+
+This is the `default` profile set — do not start the observability profile
+alongside it on a laptop.
+
+A service that is down shows as `502` at the gateway and reaches the app as
+"Could not load the menu". Probe before debugging the app:
+
+```bash
+for p in notify/inbox menu-items/ orders/ finance/invoices \
+         hostel/allocations/mine transport/routes grievance; do
+  printf '%s  /api/v1/%s\n' \
+    "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8080/api/v1/$p)" "$p"
+done
+```
+
+Every line should read `401` (up, auth required). `502` means that service is
+not running; `404` usually means a stale image — rebuild with
+`docker compose -f infra/docker-compose.yml up -d --build <service>`.
+
+## 2. Seed demo data
+
+Every screen renders empty on a fresh database, which makes the app impossible
+to evaluate. The seed is idempotent:
+
+```bash
+scripts/seed_student_demo.sh            # defaults to MOB-TEST-001
+```
+
+It creates a canteen menu (one item sold out), invoices in both paid and
+pending states — with real `Payment` and `Receipt` rows behind the paid ones,
+so "View receipt" works — notifications, a hostel block with rooms and a
+confirmed allocation, two bus routes with seats 1/2/7 already taken, and
+grievance tickets.
+
+## 3. Walk the student flow
+
+Signed in as the test student, each of these was confirmed on device:
+
+| Screen | Verified |
+| --- | --- |
+| Home | dues `₹51,500.00` with lakh grouping, room from `/allocations/mine`, unread badge |
+| Fees | invoices list, Razorpay sheet opens, receipt renders in-app |
+| Canteen | cart totals live, order places, active order shows its kitchen stage |
+| Orders | in-progress split from history, spend counts collected orders only |
+| Transport | routes, schedules, 32-seat grid with taken seats disabled, booking drops the free count |
+| Grievance | ticket files and appears in the list |
+| Notifications | inbox lists, tapping marks read optimistically |
+
+## 4. Offline behaviour
+
+**`adb reverse` tunnels over USB, so airplane mode alone does not isolate the
+phone.** NetInfo reports offline and the banner appears, but requests still
+reach the laptop over the cable and the app keeps refreshing. To test offline
+for real, **unplug the phone** (or stop the reverse tunnels).
+
+Observed with the cable disconnected:
+
+| Check | Result |
+| --- | --- |
+| Offline banner | appears, reading "Offline — showing data from N min ago" |
+| Cached screens | home, fees, canteen, alerts, help all still render |
+| Fee payment | refuses with the offline message; never queues |
+| Grievance | accepted, "Saved. It will be sent when you are back online" |
+| Reconnect | queued grievances replay and appear without a manual refresh |
+
+Payments and seat bookings deliberately do not queue: a fee that fires an hour
+late, or a booking that claims a seat someone else already took, is worse than
+one that fails in front of the student. Grievances do queue — hostel blocks are
+where complaints get raised and where the signal dies.
+
+## 5. Gotchas found in this phase
+
+**Reanimated segfaults under Expo Go.** `react-native-reanimated` and
+`react-native-worklets` are blocked at the Metro resolver in
+`metro.config.js`. Expo Go ships its own `libworklets.so`; importing reanimated
+initializes that native runtime against a mismatched JS side and kills the app
+on launch (SIGSEGV on `mqt_v_js`). Both packages reappear in `node_modules` on
+any `npm install` because expo-router lists them as optional peers — that is
+expected and harmless while the resolver block stands. Motion uses RN core
+`Animated`.
+
+**MMKV needs a custom dev build.** `react-native-mmkv` v3+ is built on Nitro
+modules, which Expo Go does not ship. Every read and write fails with "the
+native NitroModules Turbo/Native-Module could not be found" while the app keeps
+running, so persistence silently does nothing. The query cache uses
+AsyncStorage instead.
+
+**`LayoutAnimation` is a no-op** on the New Architecture and warns on every
+launch. Animate layout changes with `Animated` values instead.
