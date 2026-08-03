@@ -27,3 +27,6 @@ mobile/su-erp-app/.expo/
 mobile/su-erp-app/.env
 mobile/su-erp-app/expo-env.d.ts
 mobile/su-erp-app/dist/
+
+# Uploaded grievance evidence (local dev; object storage in deployment)
+services/*/media/

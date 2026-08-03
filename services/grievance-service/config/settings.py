@@ -108,6 +108,14 @@ USE_TZ = True
 
 STATIC_URL = "static/"
 
+# --- Uploaded media ---------------------------------------------------------
+# Grievance evidence photos. Kept under a dedicated directory rather than the
+# service root so the purge sweep, backups, and .gitignore all have one place
+# to point at. In a real deployment this is object storage, not local disk.
+
+MEDIA_URL = "media/"
+MEDIA_ROOT = env("MEDIA_ROOT", default=str(BASE_DIR / "media"))
+
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 # --- Django REST Framework ------------------------------------------------------
@@ -161,6 +169,11 @@ CELERY_BEAT_SCHEDULE = {
     "drain-outbox-grievance": {
         "task": "grievance.tasks.drain_outbox_task",
         "schedule": 5.0,
+    },
+    "purge-expired-grievance-media": {
+        "task": "grievance.tasks.purge_expired_media_task",
+        # Hourly is ample for a 7-day window and keeps the sweep cheap.
+        "schedule": 3600.0,
     },
 }
 

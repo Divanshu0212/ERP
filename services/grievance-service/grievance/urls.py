@@ -5,7 +5,12 @@ Included under /api/v1/ from config.urls, giving /api/v1/grievance and
 """
 
 from django.urls import path
-from grievance.views import GrievanceDetailView, GrievanceListCreateView, GrievanceStatusView
+from grievance.views import (
+    GrievanceDetailView,
+    GrievanceListCreateView,
+    GrievanceStatusView,
+    TicketMediaView,
+)
 
 urlpatterns = [
     path("grievance", GrievanceListCreateView.as_view(), name="grievance-list-create"),
@@ -15,5 +20,6 @@ urlpatterns = [
         GrievanceStatusView.as_view(),
         name="grievance-status",
     ),
+    path("grievance/<uuid:ticket_id>/media", TicketMediaView.as_view(), name="grievance-media"),
     path("grievance/<uuid:ticket_id>", GrievanceDetailView.as_view(), name="grievance-detail"),
 ]

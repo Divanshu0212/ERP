@@ -65,6 +65,43 @@ class Ticket(TenantModel):
         return f"Ticket {self.id} ({self.category}, {self.status})"
 
 
+#: How long evidence survives after a ticket is resolved. Long enough that a
+#: student who disagrees with the resolution can still point at the photo;
+#: short enough that the platform is not indefinitely holding images of
+#: people's rooms. See the mobile spec's retention rule.
+MEDIA_RETENTION_DAYS = 7
+
+
+class TicketMedia(TenantModel):
+    """A photo or short video attached to a grievance.
+
+    The blob is deliberately temporary and the metadata is not. Seven days
+    after the ticket is resolved a sweep deletes the file and stamps
+    ``purged_at``, leaving ``sha256`` and ``captured_at`` behind — so the log
+    can still say "three attachments, purged on the 9th" without the platform
+    holding the images forever.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    ticket = models.ForeignKey(Ticket, on_delete=models.CASCADE, related_name="media")
+    file = models.FileField(upload_to="grievance-media/", blank=True)
+    sha256 = models.CharField(max_length=64)
+    captured_at = models.DateTimeField()
+    #: Null until the ticket resolves — an open ticket's evidence never expires.
+    expires_at = models.DateTimeField(null=True, blank=True)
+    purged_at = models.DateTimeField(null=True, blank=True)
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["expires_at", "purged_at"], name="media_purge_sweep"),
+        ]
+
+    def __str__(self):
+        state = "purged" if self.purged_at else "held"
+        return f"media({self.ticket_id}, {state})"
+
+
 class TicketComment(TenantModel):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     ticket = models.ForeignKey(Ticket, on_delete=models.CASCADE, related_name="comments")

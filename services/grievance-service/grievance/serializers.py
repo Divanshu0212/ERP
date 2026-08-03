@@ -4,7 +4,7 @@ Request validation and response shaping only — the create flow's actual
 atomic-commit/outbox logic lives in ``grievance.views.GrievanceCreateView``.
 """
 
-from grievance.models import Ticket
+from grievance.models import Ticket, TicketMedia
 from rest_framework import serializers
 
 
@@ -28,3 +28,16 @@ class TicketSerializer(serializers.ModelSerializer):
             "created_at",
         ]
         read_only_fields = fields
+
+
+class TicketMediaSerializer(serializers.ModelSerializer):
+    url = serializers.SerializerMethodField()
+
+    class Meta:
+        model = TicketMedia
+        fields = ["id", "url", "sha256", "captured_at", "expires_at", "purged_at"]
+        read_only_fields = fields
+
+    def get_url(self, obj):
+        """None once purged — the row survives, the file does not."""
+        return obj.file.url if obj.file else None
