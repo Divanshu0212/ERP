@@ -110,3 +110,57 @@ class Pass(TenantModel):
 
     def __str__(self):
         return f"Pass {self.id} (active={self.active})"
+
+
+class Trip(TenantModel):
+    """One driver's active run of a schedule.
+
+    A schedule is the timetable entry; a Trip is today's actual execution of
+    it. Separating them means the live position and breadcrumb trail belong
+    to a specific run and disappear cleanly when it ends.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    schedule = models.ForeignKey(BusSchedule, on_delete=models.CASCADE, related_name="trips")
+    # Reference to auth-service's User table (the driver), by user_code.
+    driver_id = models.CharField(max_length=30)
+    started_at = models.DateTimeField(auto_now_add=True)
+    ended_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["schedule", "ended_at"], name="trip_schedule_active"),
+        ]
+
+    def __str__(self):
+        return f"Trip {self.id} ({'active' if self.ended_at is None else 'ended'})"
+
+
+class Breadcrumb(TenantModel):
+    """One GPS sample from a running trip.
+
+    ``recorded_at`` is stamped on the device, not the server, because these
+    arrive in batches after a signal gap — the server's clock would collapse
+    a five-minute tunnel into one instant. The uniqueness constraint makes a
+    replayed batch (the offline queue retrying) a no-op rather than a
+    duplicated trail.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    trip = models.ForeignKey(Trip, on_delete=models.CASCADE, related_name="breadcrumbs")
+    lat = models.DecimalField(max_digits=9, decimal_places=6)
+    lng = models.DecimalField(max_digits=9, decimal_places=6)
+    recorded_at = models.DateTimeField()
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["trip", "recorded_at"], name="unique_breadcrumb_per_instant"
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["trip", "recorded_at"], name="breadcrumb_trip_time"),
+        ]
+
+    def __str__(self):
+        return f"{self.lat},{self.lng} @ {self.recorded_at}"

@@ -16,21 +16,26 @@ On a successful booking the cached seat count for the schedule is invalidated
 No event is published — a booking is terminal for now.
 """
 
+from django.core.cache import cache
 from django.db import IntegrityError, transaction
 from django.shortcuts import get_object_or_404
+from django.utils import timezone
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.generics import ListAPIView
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.views import APIView
 from suerp_common.envelope import fail, ok
 from suerp_common.permissions import role_required
 from suerp_common.tenancy import get_current_tenant
 
-from .models import Booking, BusSchedule, Route
+from .models import Booking, Breadcrumb, BusSchedule, Route, Trip
 from .serializers import (
     BookingRequestSerializer,
     BookingSerializer,
+    BreadcrumbBatchSerializer,
     BusScheduleSerializer,
     RouteSerializer,
+    TripSerializer,
 )
 from .services import get_available_seats, invalidate_seats
 
@@ -174,3 +179,139 @@ class ScheduleBookingsView(ListAPIView):
         if role != "admin" and str(schedule.driver_id) != str(self.request.user.id):
             raise PermissionDenied("You do not own this schedule.")
         return Booking.objects.filter(schedule=schedule).order_by("seat_no")
+
+
+#: A position older than a minute is worse than no position, because a student
+#: would trust a stale dot on the map.
+LIVE_POSITION_TTL_SECONDS = 60
+
+
+def _live_key(tenant_id, route_id) -> str:
+    """Tenant-namespaced, matching this service's seat-cache key convention
+    (see transport.services.seats_cache_key) so no tenant can read another's
+    bus.
+    """
+    return f"live:{tenant_id}:{route_id}"
+
+
+class TripStartView(APIView):
+    """POST /api/v1/transport/schedules/<id>/trips — begin a run."""
+
+    permission_classes = [role_required("driver", "admin")]
+
+    def post(self, request, schedule_id):
+        # ``objects`` is tenant-scoped, so another tenant's schedule is simply
+        # not found — no cross-tenant existence leak.
+        try:
+            schedule = BusSchedule.objects.get(pk=schedule_id)
+        except BusSchedule.DoesNotExist:
+            return fail("Schedule not found.", status=404)
+
+        role = getattr(request.user, "role", None)
+        if role != "admin" and str(schedule.driver_id) != str(request.user.id):
+            return fail("You do not own this schedule.", status=403)
+
+        if Trip.objects.filter(schedule=schedule, ended_at__isnull=True).exists():
+            return fail("A trip is already active on this schedule.", status=400)
+
+        trip = Trip.objects.create(
+            tenant_id=get_current_tenant(),
+            schedule=schedule,
+            driver_id=request.user.id,
+        )
+        return ok(TripSerializer(trip).data, message="Trip started.", status=201)
+
+
+class TripEndView(APIView):
+    """POST /api/v1/transport/trips/<id>/end — finish a run."""
+
+    permission_classes = [role_required("driver", "admin")]
+
+    def post(self, request, pk):
+        try:
+            trip = Trip.objects.get(pk=pk)
+        except Trip.DoesNotExist:
+            return fail("Trip not found.", status=404)
+
+        role = getattr(request.user, "role", None)
+        if role != "admin" and str(trip.driver_id) != str(request.user.id):
+            return fail("You do not own this trip.", status=403)
+
+        if trip.ended_at is not None:
+            return fail("Trip has already ended.", status=400)
+
+        trip.ended_at = timezone.now()
+        trip.save(update_fields=["ended_at"])
+        # The run is over; drop the live dot rather than let it linger its TTL.
+        cache.delete(_live_key(get_current_tenant(), trip.schedule.route_id))
+        return ok(TripSerializer(trip).data, message="Trip ended.")
+
+
+class BreadcrumbIngestView(APIView):
+    """POST /api/v1/transport/trips/<id>/breadcrumbs — batched GPS samples.
+
+    Batched rather than one-per-fix because the driver's app buffers points
+    through tunnels and flushes them together. ``ignore_conflicts`` makes a
+    replayed batch idempotent against the (trip, recorded_at) constraint.
+    """
+
+    permission_classes = [role_required("driver", "admin")]
+
+    def post(self, request, pk):
+        try:
+            trip = Trip.objects.get(pk=pk)
+        except Trip.DoesNotExist:
+            return fail("Trip not found.", status=404)
+
+        if str(trip.driver_id) != str(request.user.id):
+            return fail("You do not own this trip.", status=403)
+
+        serializer = BreadcrumbBatchSerializer(data=request.data)
+        if not serializer.is_valid():
+            return fail("Invalid breadcrumb batch.", errors=serializer.errors, status=400)
+
+        points = serializer.validated_data["points"]
+        Breadcrumb.objects.bulk_create(
+            [
+                Breadcrumb(
+                    tenant_id=get_current_tenant(),
+                    trip=trip,
+                    lat=point["lat"],
+                    lng=point["lng"],
+                    recorded_at=point["recorded_at"],
+                )
+                for point in points
+            ],
+            ignore_conflicts=True,
+        )
+
+        latest = max(points, key=lambda p: p["recorded_at"])
+        cache.set(
+            _live_key(get_current_tenant(), trip.schedule.route_id),
+            {
+                "lat": str(latest["lat"]),
+                "lng": str(latest["lng"]),
+                "recorded_at": latest["recorded_at"].isoformat(),
+                "trip_id": str(trip.id),
+            },
+            timeout=LIVE_POSITION_TTL_SECONDS,
+        )
+
+        return ok({"accepted": len(points)}, message="Breadcrumbs recorded.", status=201)
+
+
+class LivePositionView(APIView):
+    """GET /api/v1/transport/routes/<id>/live — where the bus is right now.
+
+    Served from Redis with a short TTL rather than from the Breadcrumb table:
+    this is read by every student watching the route, and it is the one query
+    that must not touch the DB on every poll.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, route_id):
+        position = cache.get(_live_key(get_current_tenant(), route_id))
+        if position is None:
+            return fail("No bus is currently running on this route.", status=404)
+        return ok(position)

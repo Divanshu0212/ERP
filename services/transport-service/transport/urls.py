@@ -7,15 +7,20 @@ from django.urls import path
 
 from .views import (
     BookingCreateView,
+    BreadcrumbIngestView,
     DriverScheduleListView,
+    LivePositionView,
     RouteListView,
     RouteSeatsView,
     ScheduleBookingsView,
+    TripEndView,
+    TripStartView,
 )
 
 urlpatterns = [
     path("routes", RouteListView.as_view(), name="route-list"),
     path("routes/<uuid:route_id>/seats", RouteSeatsView.as_view(), name="route-seats"),
+    path("routes/<uuid:route_id>/live", LivePositionView.as_view(), name="route-live"),
     path("bookings", BookingCreateView.as_view(), name="booking-create"),
     path("schedules/mine", DriverScheduleListView.as_view(), name="driver-schedules"),
     path(
@@ -23,4 +28,7 @@ urlpatterns = [
         ScheduleBookingsView.as_view(),
         name="schedule-bookings",
     ),
+    path("schedules/<uuid:schedule_id>/trips", TripStartView.as_view(), name="trip-start"),
+    path("trips/<uuid:pk>/end", TripEndView.as_view(), name="trip-end"),
+    path("trips/<uuid:pk>/breadcrumbs", BreadcrumbIngestView.as_view(), name="trip-breadcrumbs"),
 ]
