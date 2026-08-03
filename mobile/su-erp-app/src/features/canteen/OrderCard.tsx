@@ -1,8 +1,9 @@
 import type { Order } from '@api-types/index';
+import { router } from 'expo-router';
 import { Text, View } from 'react-native';
 
 import { Money } from '@/components/Money';
-import { Card, Label } from '@/components/ui';
+import { Button, Card, Label } from '@/components/ui';
 
 import { ORDER_STAGES, ORDER_STATUS_COPY, isActive } from './useOrders';
 
@@ -53,6 +54,15 @@ export function OrderCard({ order, className = '' }: { order: Order; className?:
           minute: '2-digit',
         })}
       </Text>
+
+      {/* Offered only once the food is actually ready — a code shown any
+          earlier is one the counter cannot scan. */}
+      {order.status === 'ready' ? (
+        <Button
+          label="Show pickup code"
+          onPress={() => router.push('/(student)/pickup')}
+        />
+      ) : null}
     </Card>
   );
 }

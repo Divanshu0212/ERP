@@ -51,6 +51,19 @@ export async function advanceOrder(id: string, status: OrderStatus): Promise<Ord
   }
 }
 
+/**
+ * Completes an order by scanning the student's QR rather than tapping a
+ * button. Deliberately NOT queueable: the whole point is that "completed"
+ * means a real handoff happened, and a scan replayed from a queue twenty
+ * minutes later would assert a handoff nobody witnessed.
+ */
+export function scanPickup(token: string): Promise<Order> {
+  return request<Order>('/api/v1/orders/pickup', {
+    method: 'POST',
+    body: JSON.stringify({ token }),
+  });
+}
+
 export function setItemAvailability(id: string, available: boolean): Promise<MenuItem> {
   return request<MenuItem>(`/api/v1/menu-items/${id}/`, {
     method: 'PATCH',

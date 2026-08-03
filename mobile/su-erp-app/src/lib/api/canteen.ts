@@ -39,3 +39,13 @@ export async function placeOrder(items: CartLine[], proof?: RazorpayProof): Prom
     body: JSON.stringify({ items, ...(proof ?? {}) }),
   });
 }
+
+export interface PickupToken {
+  token: string;
+  expires_in: number;
+}
+
+/** Only mints for an order the server considers `ready` — 400 otherwise. */
+export function fetchPickupToken(orderId: string): Promise<PickupToken> {
+  return request<PickupToken>(`/api/v1/orders/${orderId}/pickup-token`);
+}

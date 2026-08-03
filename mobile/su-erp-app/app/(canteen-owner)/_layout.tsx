@@ -2,8 +2,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { Tabs } from 'expo-router';
 
 /**
- * Two destinations: the live board the owner works off all service, and the
- * menu they adjust between rushes.
+ * Three destinations: the live board the owner works off all service, the
+ * scanner that completes a handoff, and the menu they adjust between rushes.
  */
 export default function CanteenOwnerLayout() {
   return (
@@ -20,6 +20,13 @@ export default function CanteenOwnerLayout() {
         options={{
           title: 'Orders',
           tabBarIcon: ({ color, size }) => <Ionicons name="receipt" color={color} size={size} />,
+        }}
+      />
+      <Tabs.Screen
+        name="scan"
+        options={{
+          title: 'Scan',
+          tabBarIcon: ({ color, size }) => <Ionicons name="scan" color={color} size={size} />,
         }}
       />
       <Tabs.Screen

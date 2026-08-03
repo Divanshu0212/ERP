@@ -1,4 +1,5 @@
 import type { Order, OrderStatus } from '@api-types/index';
+import { router } from 'expo-router';
 import { SectionList, Text, View } from 'react-native';
 
 import { Money } from '@/components/Money';
@@ -114,7 +115,16 @@ export default function OrderBoard() {
                 </Text>
               ))}
 
-              {next ? (
+              {/* A ready order is completed by scanning the student's code,
+                  never by a button — so "collected" always means a real
+                  handoff rather than a stray tap on a busy screen. */}
+              {item.status === 'ready' ? (
+                <Button
+                  label="Scan pickup"
+                  tone="quiet"
+                  onPress={() => router.push('/(canteen-owner)/scan')}
+                />
+              ) : next ? (
                 <Button
                   label={NEXT_LABEL[next] ?? `Mark ${next}`}
                   busy={advance.isPending && advance.variables?.id === item.id}

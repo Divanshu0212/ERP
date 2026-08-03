@@ -11,6 +11,8 @@ from canteen.views import (
     OrderCheckoutView,
     OrderListCreateView,
     OrderStatusUpdateView,
+    PickupScanView,
+    PickupTokenView,
 )
 from django.urls import path
 
@@ -18,6 +20,13 @@ urlpatterns = [
     path("menu-items/", MenuItemListCreateView.as_view(), name="menu-item-list-create"),
     path("menu-items/<uuid:pk>/", MenuItemDetailView.as_view(), name="menu-item-detail"),
     path("orders/checkout", OrderCheckoutView.as_view(), name="order-checkout"),
+    # Before any orders/<uuid:pk> pattern so it is not read as a detail route.
+    path("orders/pickup", PickupScanView.as_view(), name="order-pickup"),
+    path(
+        "orders/<uuid:pk>/pickup-token",
+        PickupTokenView.as_view(),
+        name="order-pickup-token",
+    ),
     path("orders/", OrderListCreateView.as_view(), name="order-list-create"),
     path("orders/<uuid:pk>/status/", OrderStatusUpdateView.as_view(), name="order-status-update"),
 ]
