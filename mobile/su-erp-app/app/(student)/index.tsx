@@ -95,6 +95,13 @@ export default function StudentHome() {
           />
 
           <Shortcut
+            href="/(student)/pass"
+            icon="qr-code"
+            label="Bus pass"
+            detail="Show your pass at the door"
+          />
+
+          <Shortcut
             href="/(student)/orders"
             icon="receipt"
             label="Orders"

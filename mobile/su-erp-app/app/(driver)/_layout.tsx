@@ -2,9 +2,9 @@ import { Ionicons } from '@expo/vector-icons';
 import { Tabs } from 'expo-router';
 
 /**
- * Two destinations. A driver uses this phone mounted on a dashboard, mid-route
- * — anything beyond "run the trip" and "who is on board" is a distraction at
- * the wheel.
+ * Three destinations. A driver uses this phone mounted on a dashboard,
+ * mid-route — anything beyond "run the trip", "who is on board", and "scan
+ * them aboard" is a distraction at the wheel.
  */
 export default function DriverLayout() {
   return (
@@ -21,6 +21,13 @@ export default function DriverLayout() {
         options={{
           title: 'Trip',
           tabBarIcon: ({ color, size }) => <Ionicons name="bus" color={color} size={size} />,
+        }}
+      />
+      <Tabs.Screen
+        name="scan"
+        options={{
+          title: 'Scan',
+          tabBarIcon: ({ color, size }) => <Ionicons name="scan" color={color} size={size} />,
         }}
       />
       <Tabs.Screen
