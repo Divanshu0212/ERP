@@ -20,6 +20,8 @@ from hostel.views import (
     RoomDetailView,
     RoomListCreateView,
     RoomRequestListCreateView,
+    VisitorCheckoutView,
+    VisitorLogListCreateView,
 )
 
 urlpatterns = [
@@ -63,5 +65,11 @@ urlpatterns = [
         "room-requests/<uuid:pk>/reject",
         RejectRoomRequestView.as_view(),
         name="room-request-reject",
+    ),
+    path("visitors", VisitorLogListCreateView.as_view(), name="visitor-list-create"),
+    path(
+        "visitors/<uuid:pk>/checkout",
+        VisitorCheckoutView.as_view(),
+        name="visitor-checkout",
     ),
 ]

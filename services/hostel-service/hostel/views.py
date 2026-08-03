@@ -35,6 +35,7 @@ from hostel.models import (
     Block,
     Room,
     RoomRequest,
+    VisitorLog,
 )
 from hostel.serializers import (
     AllocateRequestSerializer,
@@ -50,6 +51,7 @@ from hostel.serializers import (
     RoomRequestRejectSerializer,
     RoomRequestSerializer,
     RoomSerializer,
+    VisitorLogSerializer,
 )
 from hostel.services import RoomFullError, StudentAlreadyAllocatedError, create_allocation
 from rest_framework.generics import ListAPIView, ListCreateAPIView, RetrieveAPIView
@@ -701,3 +703,52 @@ class AllocateBulkView(APIView):
             message="Bulk import processed.",
             status=201,
         )
+
+
+class VisitorLogListCreateView(ListCreateAPIView):
+    """GET/POST /api/v1/hostel/visitors — the gate register.
+
+    GET defaults to visitors still inside (``checked_out_at`` is null), which
+    is the question a warden at the gate actually has. ``?all=true`` returns
+    the full history.
+    """
+
+    permission_classes = [role_required("warden", "admin")]
+    serializer_class = VisitorLogSerializer
+
+    def get_queryset(self):
+        qs = VisitorLog.objects.all().order_by("-checked_in_at")
+        if self.request.query_params.get("all", "").lower() != "true":
+            qs = qs.filter(checked_out_at__isnull=True)
+        return qs
+
+    def post(self, request):
+        serializer = VisitorLogSerializer(data=request.data)
+        if not serializer.is_valid():
+            return fail("Invalid visitor payload.", errors=serializer.errors, status=400)
+
+        # TenantModel does not stamp tenant_id on save, so it is set here from
+        # the verified token claim, never from a client-supplied field.
+        serializer.save(tenant_id=get_current_tenant(), logged_by=request.user.id)
+        return ok(serializer.data, message="Visitor logged.", status=201)
+
+
+class VisitorCheckoutView(APIView):
+    """POST /api/v1/hostel/visitors/<id>/checkout — stamp the exit time."""
+
+    permission_classes = [role_required("warden", "admin")]
+
+    def post(self, request, pk):
+        # objects is tenant-scoped, so another tenant's entry is simply not
+        # found — no cross-tenant existence leak.
+        try:
+            visitor = VisitorLog.objects.get(pk=pk)
+        except VisitorLog.DoesNotExist:
+            return fail("Visitor entry not found.", status=404)
+
+        if visitor.checked_out_at is not None:
+            return fail("Visitor is already checked out.", status=400)
+
+        visitor.checked_out_at = timezone.now()
+        visitor.save(update_fields=["checked_out_at"])
+        return ok(VisitorLogSerializer(visitor).data, message="Visitor checked out.")
