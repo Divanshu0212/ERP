@@ -595,6 +595,108 @@ The hard distributed-systems cases are tested in `hostel/tests/test_saga.py`:
 - **Timeout compensation never releases a paid seat** — including the paid-but-uncorrelated
   case, which is the subtle one.
 
+### Monitoring under load
+
+![Grafana — SU-ERP Services Overview](docs/screenshots/grafana-dashboard.png)
+
+The Grafana dashboard (`infra/grafana/dashboards/suerp-services.json`) during a real
+multi-tenant load run: **2,889 requests at ~9.8 req/s** driven from a client against the
+gateway across two tenants (NITJ + a freshly provisioned **IIT Ropar**), with
+**p50 10 ms / p95 34 ms** and **zero 5xx**. The dip in the middle is the services being
+rebuilt and restarted mid-run; traffic resumes cleanly after.
+
+The 4xx line is real signal, not noise: the load driver deliberately requests a
+non-existent allocation UUID on a fixed cadence so the error-rate panel has something to
+track.
+
+Two things the run surfaced, both the system behaving correctly:
+
+- **The gateway rate limiter works.** A first, unpaced attempt at ~500 req/s from one IP
+  was almost entirely rejected with `429` — nginx enforces 10 r/s per client IP
+  (burst 20), and 3 r/s on `/auth/login`. The load driver above is paced under that
+  ceiling, which is why its 429 count is zero.
+- **The auth lockout works.** A deliberate wrong-password worker tripped
+  auth-service's 5-failures-in-15-minutes account lockout, which is exactly its job.
+
+Start the monitoring stack alongside the app (it is behind its own compose profile, so it
+stays off by default):
+
+```sh
+docker compose -f infra/docker-compose.yml --profile observability up -d prometheus grafana
+```
+
+Prometheus at `http://localhost:9090` (all 14 targets healthy), Grafana at
+`http://localhost:3000` (admin/admin). Note that Grafana publishes `3000`, the same port
+as the Next.js dev server — run one at a time locally, or remap one of them.
+
+---
+
+## Correctness under adversarial conditions
+
+Throughput on a laptop proves little. What this system is actually built to survive is
+concurrency, redelivery, and infrastructure failure — so those are what it's tested for.
+Each claim below maps to something runnable, not a diagram.
+
+### Race safety — 50 threads, one seat
+
+```sh
+make test-concurrency
+```
+
+`hostel/tests/test_concurrency.py` runs real OS threads against **real PostgreSQL** (not
+the SQLite fallback, where `select_for_update()` is a no-op and a green test would prove
+nothing — it skips instead of passing vacuously) using `TransactionTestCase`, so every
+thread gets its own committed connection:
+
+| Scenario | Guarantee |
+| --- | --- |
+| 50 students race for the **last** seat | exactly **1** wins, 49 clean `RoomFullError`s, room lands at `2/2` |
+| 30 students, 3 free seats | exactly **3** win — never over-allocated |
+| 1 student fires 20 concurrent requests | exactly **1** allocation, capacity consumed once |
+| Two tenants allocate concurrently | 1 winner each, zero cross-tenant leakage |
+
+The test is load-bearing, not decorative: with `select_for_update()` neutered in-memory,
+the last-seat race reproduces the bug — **3 students win the same seat and the room
+over-allocates**. That failure is what the lock in `hostel/services.py` prevents.
+
+### Broker outage mid-saga — the outbox earns its keep
+
+```sh
+make chaos          # ./scripts/chaos_broker_outage.sh
+```
+
+Kills RabbitMQ in the middle of a live allocation saga and asserts recovery:
+
+```
+[1] killing RabbitMQ mid-flight
+  ✓ RabbitMQ is DOWN
+[2] allocating a seat with NO broker (the write must still succeed)
+  ✓ HTTP 201 — allocation created with the broker DOWN
+  ✓ event is SAFE in the outbox, unpublished: backlog 0 -> 1
+[3] bringing RabbitMQ back
+  ✓ RabbitMQ is UP and healthy
+[4] waiting for the outbox to drain by itself (beat runs every 5s)
+  ✓ backlog drained back to 0 — no manual replay, no lost events
+[5] confirming the downstream saga step ran
+  ✓ finance consumed the recovered event and raised an invoice for 11000.00
+```
+
+This is the **dual-write problem**, demonstrated rather than asserted. Publishing inside
+the request handler would have dropped that event the moment the broker died, wedging the
+saga with a seat reserved and no invoice. Because `publish_event()` only inserts an outbox
+row inside `transaction.atomic()`, the state change and the event commit together — a dead
+broker can't fail the user's request or lose the event.
+
+### Already covered by the unit suite
+
+The hard distributed-systems cases are tested in `hostel/tests/test_saga.py`:
+
+- **Out-of-order correlation** — `payment.success` arriving *before* `invoice.created`
+  still confirms the seat (and the same for the failure/release path).
+- **Idempotency** — the same `event_id` redelivered confirms once and emits one event.
+- **Timeout compensation never releases a paid seat** — including the paid-but-uncorrelated
+  case, which is the subtle one.
+
 ---
 
 ## Multi-tenancy
