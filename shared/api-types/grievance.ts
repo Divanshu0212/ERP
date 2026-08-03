@@ -17,6 +17,10 @@ export interface Ticket {
   status: TicketStatus;
   assigned_to: string | null;
   created_at: string;
+  /** Attachments on this ticket. Survives the blobs — see media_purged_at. */
+  media_count: number;
+  /** When the evidence was deleted, or null while it is still held. */
+  media_purged_at: string | null;
 }
 
 export interface TicketInput {

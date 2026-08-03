@@ -2,6 +2,7 @@ import NetInfo from '@react-native-community/netinfo';
 import { create } from 'zustand';
 
 import { setReachabilityHandlers } from '../api/client';
+import { replayMedia } from '../offline/mediaQueue';
 import { replay } from '../offline/queue';
 
 interface ConnectivityState {
@@ -28,7 +29,10 @@ export function startConnectivityWatch(): () => void {
     const wasOnline = useConnectivity.getState().online;
     useConnectivity.getState().setOnline(online);
 
-    if (online && !wasOnline) void replay();
+    if (online && !wasOnline) {
+      void replay();
+      void replayMedia();
+    }
   });
 }
 
@@ -56,4 +60,5 @@ export function notifyReachable(): void {
   if (!sawUnreachable) return;
   sawUnreachable = false;
   void replay();
+  void replayMedia();
 }

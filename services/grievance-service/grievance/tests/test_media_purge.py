@@ -129,6 +129,23 @@ def test_the_media_list_shows_purged_entries_as_metadata():
     assert entry["sha256"]
 
 
+def test_the_ticket_row_reports_its_attachments_and_when_they_were_purged():
+    """The log still says "1 attachment, purged on the 9th" after the sweep."""
+    ticket = _ticket(TENANT_A)
+    _upload(_client(TENANT_A), ticket.id)
+
+    listed = _client(TENANT_A).get("/api/v1/grievance").json()["data"]["results"][0]
+    assert listed["media_count"] == 1
+    assert listed["media_purged_at"] is None
+
+    TicketMedia.all_objects.update(expires_at=timezone.now() - timezone.timedelta(seconds=1))
+    purge_expired_media_task()
+
+    listed = _client(TENANT_A).get("/api/v1/grievance").json()["data"]["results"][0]
+    assert listed["media_count"] == 1
+    assert listed["media_purged_at"] is not None
+
+
 def test_media_does_not_leak_across_tenants():
     """A ticket from another institution is not found, let alone readable."""
     ticket = _ticket(TENANT_A)

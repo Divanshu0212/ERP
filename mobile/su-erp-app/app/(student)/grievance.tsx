@@ -1,13 +1,15 @@
 import type { Ticket } from '@api-types/index';
 import { useState } from 'react';
-import { FlatList, Text, TextInput, View } from 'react-native';
+import { FlatList, Image, Text, TextInput, View } from 'react-native';
 
 import { OfflineBanner } from '@/components/OfflineBanner';
 import { Press } from '@/components/Press';
 import { Snackbar, useSnackbar } from '@/components/Snackbar';
 import { Body, Button, Card, Label, ListState, Screen, Title } from '@/components/ui';
 import { TICKETS_KEY, useCreateTicket, useTickets } from '@/features/grievance/useGrievance';
+import { capturePhoto } from '@/lib/device/camera';
 import { useConnectivity } from '@/lib/net/connectivity';
+import { enqueueMedia, replayMedia } from '@/lib/offline/mediaQueue';
 import { cacheAge } from '@/lib/query/persister';
 
 const CATEGORIES: { value: string; label: string }[] = [
@@ -77,18 +79,40 @@ export default function GrievanceScreen() {
 
   const [category, setCategory] = useState('hostel');
   const [description, setDescription] = useState('');
+  const [photoUri, setPhotoUri] = useState<string | null>(null);
 
   const tickets = data?.results ?? [];
+
+  async function attachPhoto() {
+    try {
+      const photo = await capturePhoto();
+      if (photo) setPhotoUri(photo.uri);
+    } catch (e) {
+      snack.show((e as Error).message, 'critical');
+    }
+  }
 
   function submit() {
     create.mutate(
       { category, description: description.trim() },
       {
         onSuccess: (result) => {
+          const queued = Boolean(result && 'queued' in result);
+
+          // A photo can only be attached to a ticket that actually exists.
+          // When the ticket itself queued, there is no id yet, so the photo
+          // waits with it rather than uploading to nothing.
+          if (photoUri && !queued && result) {
+            void enqueueMedia((result as Ticket).id, photoUri).then(() => replayMedia());
+          }
+
           setDescription('');
+          if (!queued) setPhotoUri(null);
           snack.show(
-            result && 'queued' in result
-              ? 'Saved. It will be sent when you are back online.'
+            queued
+              ? photoUri
+                ? 'Saved. Your complaint and photo will be sent when you are back online.'
+                : 'Saved. It will be sent when you are back online.'
               : 'Complaint filed.',
           );
         },
@@ -137,6 +161,23 @@ export default function GrievanceScreen() {
                 className="min-h-24 rounded-control border border-surface-border bg-surface p-3 text-body text-ink"
               />
 
+              <View className="flex-row items-center gap-3">
+                <View className="flex-1">
+                  <Button
+                    label={photoUri ? 'Retake photo' : 'Attach photo'}
+                    tone="quiet"
+                    onPress={() => void attachPhoto()}
+                  />
+                </View>
+                {photoUri ? (
+                  <Image
+                    source={{ uri: photoUri }}
+                    className="h-12 w-12 rounded-control"
+                    accessibilityLabel="Attached photo"
+                  />
+                ) : null}
+              </View>
+
               {/* Said before they type, not after they submit: a student in a
                   dead zone needs to know the complaint will still be sent. */}
               {!online ? (
@@ -182,6 +223,19 @@ export default function GrievanceScreen() {
                 year: 'numeric',
               })}
             </Text>
+            {/* Says the photo existed and is gone, rather than rendering a
+                broken thumbnail once the retention sweep has run. */}
+            {item.media_count > 0 ? (
+              <Text className="text-detail text-ink-faint">
+                {item.media_count} {item.media_count === 1 ? 'attachment' : 'attachments'}
+                {item.media_purged_at
+                  ? `, purged ${new Date(item.media_purged_at).toLocaleDateString([], {
+                      day: 'numeric',
+                      month: 'short',
+                    })}`
+                  : ''}
+              </Text>
+            ) : null}
           </Card>
         )}
       />
