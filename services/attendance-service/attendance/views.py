@@ -15,7 +15,7 @@ from django.utils import timezone
 from rest_framework.generics import ListCreateAPIView
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.views import APIView
-from suerp_common.envelope import fail, ok
+from suerp_common.envelope import StandardPagination, fail, ok
 from suerp_common.permissions import role_required
 from suerp_common.tenancy import get_current_tenant
 
@@ -44,9 +44,23 @@ class AttendanceRecordListCreateView(ListCreateAPIView):
 
 
 class SessionCreateView(APIView):
-    """POST /api/v1/attendance/sessions — faculty opens a class meeting."""
+    """GET/POST /api/v1/attendance/sessions — the faculty session console.
+
+    GET lists the caller's own sessions (an admin sees the tenant's), newest
+    first, so the console can reopen the code display after a page reload
+    rather than stranding a running class behind a lost session id.
+    """
 
     permission_classes = [role_required("faculty", "admin")]
+
+    def get(self, request):
+        sessions = Session.objects.all().order_by("-opened_at")
+        if getattr(request.user, "role", None) != "admin":
+            sessions = sessions.filter(faculty_id=request.user.id)
+
+        page = StandardPagination()
+        rows = page.paginate_queryset(sessions, request, view=self)
+        return page.get_paginated_response(SessionSerializer(rows, many=True).data)
 
     def post(self, request):
         serializer = SessionCreateSerializer(data=request.data)
@@ -94,6 +108,25 @@ class SessionCodeView(APIView):
             return fail("Session not found.", status=404)
 
         return ok({"code": current_code(session.id), "rotates_in": CODE_PERIOD_SECONDS})
+
+
+class SessionMarksView(APIView):
+    """GET /api/v1/attendance/sessions/<id>/marks — who is in the room.
+
+    Faculty-only: this is the live roster, and a student being able to read
+    it would turn "who skipped today" into a broadcast.
+    """
+
+    permission_classes = [role_required("faculty", "admin")]
+
+    def get(self, request, pk):
+        try:
+            session = Session.objects.get(pk=pk)
+        except Session.DoesNotExist:
+            return fail("Session not found.", status=404)
+
+        marks = AttendanceMark.objects.filter(session=session).order_by("marked_at")
+        return ok(AttendanceMarkSerializer(marks, many=True).data)
 
 
 class MarkAttendanceView(APIView):

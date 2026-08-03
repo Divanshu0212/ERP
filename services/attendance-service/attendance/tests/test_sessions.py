@@ -141,6 +141,42 @@ def test_sessions_do_not_leak_across_tenants():
     assert response.status_code == 404
 
 
+def test_faculty_lists_their_own_open_sessions():
+    _open_session(TENANT_A, faculty="FAC-001")
+    _open_session(TENANT_A, faculty="FAC-002")
+
+    response = _client(TENANT_A, role="faculty", sub="FAC-001").get(
+        "/api/v1/attendance/sessions"
+    )
+
+    assert response.status_code == 200
+    rows = response.json()["data"]["results"]
+    assert len(rows) == 1
+    assert rows[0]["faculty_id"] == "FAC-001"
+
+
+def test_faculty_sees_who_has_marked_their_session():
+    session = _open_session(TENANT_A)
+    _mark(_client(TENANT_A, sub="STU-001"), session["id"], current_code(session["id"]))
+
+    response = _client(TENANT_A, role="faculty", sub="FAC-001").get(
+        f"/api/v1/attendance/sessions/{session['id']}/marks"
+    )
+
+    assert response.status_code == 200
+    rows = response.json()["data"]
+    assert [row["student_user_code"] for row in rows] == ["STU-001"]
+
+
+def test_students_cannot_read_the_roster():
+    """The roster is who is in the room — not a student's business."""
+    session = _open_session(TENANT_A)
+
+    response = _client(TENANT_A).get(f"/api/v1/attendance/sessions/{session['id']}/marks")
+
+    assert response.status_code == 403
+
+
 def test_the_summary_reports_a_percentage_per_course():
     session = _open_session(TENANT_A)
     _mark(_client(TENANT_A), session["id"], current_code(session["id"]))
